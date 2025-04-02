@@ -9,12 +9,12 @@ use parking_lot::Mutex;
 use rustix::termios;
 use signal_hook::SigId;
 
-use crate::{terminal::FileDescriptor, InputEvent};
+use crate::{event::InternalEvent, terminal::FileDescriptor, InputEvent};
 
-use super::PollTimeout;
+use super::{EventSource, PollTimeout};
 
 #[derive(Debug)]
-pub struct EventSource {
+pub struct UnixEventSource {
     read: FileDescriptor,
     write: FileDescriptor,
     sigwinch_id: SigId,
@@ -24,7 +24,7 @@ pub struct EventSource {
 }
 
 #[derive(Debug, Clone)]
-pub(crate) struct Waker {
+pub struct Waker {
     inner: Arc<Mutex<UnixStream>>,
 }
 
@@ -34,7 +34,7 @@ impl Waker {
     }
 }
 
-impl EventSource {
+impl UnixEventSource {
     pub(crate) fn new(read: FileDescriptor, write: FileDescriptor) -> io::Result<Self> {
         let (sigwinch_pipe, sigwinch_pipe_write) = UnixStream::pair()?;
         let sigwinch_id = signal_hook::low_level::pipe::register(
@@ -56,14 +56,22 @@ impl EventSource {
             wake_pipe_write: Arc::new(Mutex::new(wake_pipe_write)),
         })
     }
+}
 
-    pub(crate) fn waker(&self) -> Waker {
+impl Drop for UnixEventSource {
+    fn drop(&mut self) {
+        signal_hook::low_level::unregister(self.sigwinch_id);
+    }
+}
+
+impl EventSource for UnixEventSource {
+    fn waker(&self) -> Waker {
         Waker {
             inner: self.wake_pipe_write.clone(),
         }
     }
 
-    pub fn try_read(&mut self, timeout: Option<Duration>) -> io::Result<Option<InputEvent>> {
+    fn try_read(&mut self, timeout: Option<Duration>) -> io::Result<Option<InternalEvent>> {
         let timeout = PollTimeout::new(timeout);
 
         let mut poll_set = PollSet::new([
@@ -96,7 +104,7 @@ impl EventSource {
                     rows: winsize.ws_row,
                     cols: winsize.ws_col,
                 };
-                return Ok(Some(event));
+                return Ok(Some(InternalEvent::InputEvent(event)));
             }
 
             // Waker has awoken.
@@ -111,12 +119,6 @@ impl EventSource {
         }
 
         Ok(None)
-    }
-}
-
-impl Drop for EventSource {
-    fn drop(&mut self) {
-        signal_hook::low_level::unregister(self.sigwinch_id);
     }
 }
 

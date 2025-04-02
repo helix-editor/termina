@@ -1,13 +1,15 @@
 use rustix::termios::{self, Termios};
 use std::{
     fs,
-    io::{self, IsTerminal as _},
+    io::{self, BufWriter, IsTerminal as _},
     os::unix::prelude::*,
 };
 
-use crate::EventSource;
+use crate::event::source::UnixEventSource;
 
 use super::Terminal;
+
+const BUF_SIZE: usize = 4096;
 
 #[derive(Debug)]
 pub(crate) enum FileDescriptor {
@@ -78,8 +80,7 @@ fn open_pty() -> io::Result<(FileDescriptor, FileDescriptor)> {
 pub struct UnixTerminal {
     // Read and write handles to stdin/stdout or `/dev/tty`
     read: FileDescriptor,
-    // TODO: buffer this writer.
-    write: FileDescriptor,
+    write: BufWriter<FileDescriptor>,
     /// The termios of the PTY's writer detected during `Self::new`.
     original_termios: Termios,
     // parser...
@@ -92,21 +93,25 @@ impl UnixTerminal {
 
         Ok(Self {
             read,
-            write,
+            write: BufWriter::with_capacity(BUF_SIZE, write),
             original_termios,
         })
     }
 
-    pub fn event_source(&self) -> io::Result<EventSource> {
-        EventSource::new(self.read.try_clone()?, self.write.try_clone()?)
+    pub fn event_source(&self) -> io::Result<UnixEventSource> {
+        UnixEventSource::new(self.read.try_clone()?, self.write.get_ref().try_clone()?)
     }
 }
 
 impl Terminal for UnixTerminal {
     fn enter_raw_mode(&mut self) -> io::Result<()> {
-        let mut termios = termios::tcgetattr(&self.write)?;
+        let mut termios = termios::tcgetattr(self.write.get_ref())?;
         termios.make_raw();
-        termios::tcsetattr(&self.write, termios::OptionalActions::Flush, &termios)?;
+        termios::tcsetattr(
+            self.write.get_ref(),
+            termios::OptionalActions::Flush,
+            &termios,
+        )?;
 
         // TODO: enable bracketed paste, mouse capture, etc..? Or let the consuming application do
         // so?
@@ -116,7 +121,7 @@ impl Terminal for UnixTerminal {
 
     fn exit_raw_mode(&mut self) -> io::Result<()> {
         termios::tcsetattr(
-            &self.write,
+            self.write.get_ref(),
             termios::OptionalActions::Now,
             &self.original_termios,
         )?;
@@ -131,6 +136,11 @@ impl Terminal for UnixTerminal {
     fn exit_alternate_screen(&mut self) -> std::io::Result<()> {
         todo!()
     }
+
+    fn get_dimensions(&mut self) -> io::Result<(u16, u16)> {
+        let winsize = termios::tcgetwinsize(self.write.get_ref())?;
+        Ok((winsize.ws_row, winsize.ws_col))
+    }
 }
 
 impl Drop for UnixTerminal {
@@ -139,7 +149,7 @@ impl Drop for UnixTerminal {
         self.exit_alternate_screen().unwrap();
         // TODO: reset any bracketed paste, mouse capture, etc. that has been enabled.
         termios::tcsetattr(
-            &self.write,
+            self.write.get_ref(),
             termios::OptionalActions::Now,
             &self.original_termios,
         )
