@@ -11,9 +11,12 @@ use windows_sys::Win32::{
     Storage::FileSystem::WriteFile,
     System::Console::{
         self, GetConsoleCP, GetConsoleMode, GetConsoleOutputCP, GetConsoleScreenBufferInfo,
-        SetConsoleCP, SetConsoleMode, SetConsoleOutputCP, CONSOLE_MODE, CONSOLE_SCREEN_BUFFER_INFO,
+        GetNumberOfConsoleInputEvents, ReadConsoleInputW, SetConsoleCP, SetConsoleMode,
+        SetConsoleOutputCP, CONSOLE_MODE, CONSOLE_SCREEN_BUFFER_INFO, INPUT_RECORD,
     },
 };
+
+use crate::event::source::WindowsEventSource;
 
 use super::Terminal;
 
@@ -38,6 +41,12 @@ pub(crate) struct InputHandle {
 impl InputHandle {
     fn new<H: Into<OwnedHandle>>(h: H) -> Self {
         Self { handle: h.into() }
+    }
+
+    fn try_clone(&self) -> io::Result<Self> {
+        Ok(Self {
+            handle: self.handle.try_clone()?,
+        })
     }
 
     fn get_mode(&self) -> io::Result<CONSOLE_MODE> {
@@ -81,6 +90,40 @@ impl InputHandle {
             );
         }
         Ok(())
+    }
+
+    pub fn get_number_of_input_events(&mut self) -> io::Result<usize> {
+        let mut num = 0;
+        if unsafe { GetNumberOfConsoleInputEvents(self.as_raw_handle(), &mut num) } == 0 {
+            bail!(
+                "failed to read input console number of pending events: {}",
+                io::Error::last_os_error()
+            );
+        }
+        Ok(num as usize)
+    }
+
+    pub fn read_console_input(&mut self, num_events: usize) -> io::Result<Vec<INPUT_RECORD>> {
+        let mut res = Vec::with_capacity(num_events);
+        let zeroed: INPUT_RECORD = unsafe { mem::zeroed() };
+        res.resize(num_events, zeroed);
+        let mut num = 0;
+        if unsafe {
+            ReadConsoleInputW(
+                self.as_raw_handle(),
+                res.as_mut_ptr(),
+                num_events as u32,
+                &mut num,
+            )
+        } == 0
+        {
+            bail!(
+                "failed to read console input events: {}",
+                io::Error::last_os_error()
+            );
+        }
+        unsafe { res.set_len(num as usize) };
+        Ok(res)
     }
 }
 
@@ -209,7 +252,6 @@ fn open_pty() -> io::Result<(InputHandle, OutputHandle)> {
 pub struct WindowsTerminal {
     input: InputHandle,
     output: BufWriter<OutputHandle>,
-    // waker_handle
     original_input_mode: u32,
     original_output_mode: u32,
     original_input_cp: u32,
@@ -248,6 +290,10 @@ impl WindowsTerminal {
             original_input_cp,
             original_output_cp,
         })
+    }
+
+    pub fn event_source(&self) -> io::Result<WindowsEventSource> {
+        WindowsEventSource::new(self.input.try_clone()?)
     }
 }
 

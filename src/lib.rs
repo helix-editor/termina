@@ -3,4 +3,4 @@ pub(crate) mod event;
 pub mod style;
 pub mod terminal;
 
-pub use event::{source::EventSource, InputEvent};
+pub use event::InputEvent;

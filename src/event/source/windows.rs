@@ -1,0 +1,121 @@
+use std::{io, os::windows::prelude::*, ptr, sync::Arc, time::Duration};
+
+use windows_sys::Win32::System::Threading;
+
+use crate::{event::InternalEvent, terminal::InputHandle};
+
+use super::{EventSource, PollTimeout};
+
+#[derive(Debug)]
+pub struct WindowsEventSource {
+    input: InputHandle,
+    waker: Arc<EventHandle>,
+}
+
+impl WindowsEventSource {
+    pub(crate) fn new(input: InputHandle) -> io::Result<Self> {
+        Ok(Self {
+            input,
+            waker: Arc::new(EventHandle::new()?),
+        })
+    }
+}
+
+impl EventSource for WindowsEventSource {
+    fn waker(&self) -> Waker {
+        Waker {
+            handle: self.waker.clone(),
+        }
+    }
+
+    fn try_read(&mut self, timeout: Option<Duration>) -> io::Result<Option<InternalEvent>> {
+        use windows_sys::Win32::Foundation::{WAIT_FAILED, WAIT_OBJECT_0, WAIT_TIMEOUT};
+        use Threading::{WaitForMultipleObjects, INFINITE};
+
+        let timeout = PollTimeout::new(timeout);
+
+        while timeout.leftover().map_or(true, |t| !t.is_zero()) {
+            // TODO: emit any events saved to an input queue (VecDeque)
+
+            let mut pending = self.input.get_number_of_input_events()?;
+
+            if pending == 0 {
+                let mut handles = [self.input.as_raw_handle(), self.waker.as_raw_handle()];
+                let wait = timeout
+                    .leftover()
+                    .map(|timeout| timeout.as_millis() as u32)
+                    .unwrap_or(INFINITE);
+                let result = unsafe {
+                    WaitForMultipleObjects(
+                        handles.len() as u32,
+                        handles.as_mut_ptr(),
+                        false as i32,
+                        wait,
+                    )
+                };
+
+                #[allow(clippy::if_same_then_else)]
+                if result == WAIT_OBJECT_0 {
+                    pending = self.input.get_number_of_input_events()?;
+                } else if result == WAIT_OBJECT_0 + 1 {
+                    return Ok(Some(InternalEvent::Wake));
+                } else if result == WAIT_FAILED {
+                    return Err(io::Error::new(
+                        io::ErrorKind::Other,
+                        format!(
+                            "failed to poll input handles: {}",
+                            io::Error::last_os_error()
+                        ),
+                    ));
+                } else if result == WAIT_TIMEOUT {
+                    return Ok(None);
+                } else {
+                    return Ok(None);
+                }
+            }
+            let records = self.input.read_console_input(pending)?;
+            // give the records to the parser and then continue with another loop.
+            todo!("handle the records");
+        }
+
+        Ok(None)
+    }
+}
+
+#[derive(Debug)]
+struct EventHandle {
+    handle: OwnedHandle,
+}
+
+impl EventHandle {
+    fn new() -> io::Result<Self> {
+        let handle = unsafe { Threading::CreateEventW(ptr::null(), 0, 0, ptr::null()) };
+        if handle.is_null() {
+            Err(io::Error::last_os_error())
+        } else {
+            let handle = unsafe { OwnedHandle::from_raw_handle(handle) };
+            Ok(Self { handle })
+        }
+    }
+}
+
+impl AsRawHandle for EventHandle {
+    fn as_raw_handle(&self) -> RawHandle {
+        self.handle.as_raw_handle()
+    }
+}
+
+#[derive(Debug)]
+pub struct Waker {
+    handle: Arc<EventHandle>,
+}
+
+impl Waker {
+    pub fn wake(&self) -> io::Result<()> {
+        if unsafe { Threading::SetEvent(self.handle.as_raw_handle()) } == 0 {
+            Err(io::Error::last_os_error())
+        } else {
+            Ok(())
+        }
+    }
+}
