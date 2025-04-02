@@ -1,4 +1,6 @@
+pub(crate) mod reader;
 pub(crate) mod source;
+pub(crate) mod stream;
 
 #[derive(Debug, PartialEq, Eq)]
 pub enum InputEvent {
@@ -8,5 +10,4 @@ pub enum InputEvent {
 #[derive(Debug, PartialEq, Eq)]
 pub(crate) enum InternalEvent {
     InputEvent(InputEvent),
-    Wake,
 }

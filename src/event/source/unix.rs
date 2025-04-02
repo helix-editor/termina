@@ -24,11 +24,11 @@ pub struct UnixEventSource {
 }
 
 #[derive(Debug, Clone)]
-pub struct Waker {
+pub struct UnixWaker {
     inner: Arc<Mutex<UnixStream>>,
 }
 
-impl Waker {
+impl UnixWaker {
     pub fn wake(&self) -> io::Result<()> {
         self.inner.lock().write_all(&[0])
     }
@@ -65,8 +65,8 @@ impl Drop for UnixEventSource {
 }
 
 impl EventSource for UnixEventSource {
-    fn waker(&self) -> Waker {
-        Waker {
+    fn waker(&self) -> UnixWaker {
+        UnixWaker {
             inner: self.wake_pipe_write.clone(),
         }
     }

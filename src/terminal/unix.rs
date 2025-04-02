@@ -5,7 +5,7 @@ use std::{
     os::unix::prelude::*,
 };
 
-use crate::event::source::UnixEventSource;
+use crate::{event::source::UnixEventSource, EventStream};
 
 use super::Terminal;
 
@@ -97,10 +97,6 @@ impl UnixTerminal {
             original_termios,
         })
     }
-
-    pub fn event_source(&self) -> io::Result<UnixEventSource> {
-        UnixEventSource::new(self.read.try_clone()?, self.write.get_ref().try_clone()?)
-    }
 }
 
 impl Terminal for UnixTerminal {
@@ -141,13 +137,17 @@ impl Terminal for UnixTerminal {
         let winsize = termios::tcgetwinsize(self.write.get_ref())?;
         Ok((winsize.ws_row, winsize.ws_col))
     }
+
+    fn event_stream(&self) -> io::Result<EventStream> {
+        let source =
+            UnixEventSource::new(self.read.try_clone()?, self.write.get_ref().try_clone()?)?;
+        Ok(EventStream::new(source))
+    }
 }
 
 impl Drop for UnixTerminal {
     fn drop(&mut self) {
-        // TODO: make the cursor visible.
         self.exit_alternate_screen().unwrap();
-        // TODO: reset any bracketed paste, mouse capture, etc. that has been enabled.
         termios::tcsetattr(
             self.write.get_ref(),
             termios::OptionalActions::Now,

@@ -22,8 +22,8 @@ impl WindowsEventSource {
 }
 
 impl EventSource for WindowsEventSource {
-    fn waker(&self) -> Waker {
-        Waker {
+    fn waker(&self) -> WindowsWaker {
+        WindowsWaker {
             handle: self.waker.clone(),
         }
     }
@@ -58,7 +58,10 @@ impl EventSource for WindowsEventSource {
                 if result == WAIT_OBJECT_0 {
                     pending = self.input.get_number_of_input_events()?;
                 } else if result == WAIT_OBJECT_0 + 1 {
-                    return Ok(Some(InternalEvent::Wake));
+                    return Err(io::Error::new(
+                        io::ErrorKind::Interrupted,
+                        "Poll operation was woken up",
+                    ));
                 } else if result == WAIT_FAILED {
                     return Err(io::Error::new(
                         io::ErrorKind::Other,
@@ -106,11 +109,11 @@ impl AsRawHandle for EventHandle {
 }
 
 #[derive(Debug)]
-pub struct Waker {
+pub struct WindowsWaker {
     handle: Arc<EventHandle>,
 }
 
-impl Waker {
+impl WindowsWaker {
     pub fn wake(&self) -> io::Result<()> {
         if unsafe { Threading::SetEvent(self.handle.as_raw_handle()) } == 0 {
             Err(io::Error::last_os_error())

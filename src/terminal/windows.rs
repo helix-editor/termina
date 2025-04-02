@@ -16,7 +16,7 @@ use windows_sys::Win32::{
     },
 };
 
-use crate::event::source::WindowsEventSource;
+use crate::{event::source::WindowsEventSource, EventSource};
 
 use super::Terminal;
 
@@ -291,10 +291,6 @@ impl WindowsTerminal {
             original_output_cp,
         })
     }
-
-    pub fn event_source(&self) -> io::Result<WindowsEventSource> {
-        WindowsEventSource::new(self.input.try_clone()?)
-    }
 }
 
 impl Drop for WindowsTerminal {
@@ -366,5 +362,10 @@ impl Terminal for WindowsTerminal {
         // NOTE: setting dimensions should be done by VT instead of `SetConsoleScreenBufferInfo`.
         // <https://learn.microsoft.com/en-us/windows/console/console-virtual-terminal-sequences#window-width>
         self.output.get_mut().get_dimensions()
+    }
+
+    fn event_stream(&self) -> io::Result<EventStream> {
+        let source = WindowsEventSource::new(self.input.try_clone()?);
+        Ok(EventStream::new(source))
     }
 }

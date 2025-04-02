@@ -12,8 +12,7 @@ rust-version = "1.70"
 [dependencies]
 parking_lot = "0.12"
 bitflags = "2"
-# TODO: event stream
-# futures-core = "0.3"
+futures-core = "0.3"
 
 [target.'cfg(unix)'.dependencies]
 rustix = { version = "1", default-features = false, features = ["std", "stdio", "termios", "event", "io_uring"] }

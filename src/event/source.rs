@@ -6,25 +6,50 @@ mod windows;
 use std::time::{Duration, Instant};
 
 #[cfg(unix)]
-pub use unix::{UnixEventSource, Waker};
+pub(crate) use unix::{UnixEventSource, UnixWaker};
 #[cfg(windows)]
-pub use windows::{Waker, WindowsEventSource};
+pub(crate) use windows::{Waker, WindowsEventSource};
+
+#[cfg(unix)]
+pub(crate) type PlatformEventSource = UnixEventSource;
+#[cfg(windows)]
+pub(crate) type PlatformEventSource = WindowsEventSource;
+
+#[cfg(unix)]
+pub(crate) type PlatformWaker = UnixWaker;
+#[cfg(windows)]
+pub(crate) type PlatformWaker = WindowsWaker;
+
+pub(crate) trait EventSource: Send + Sync {
+    fn try_read(
+        &mut self,
+        timeout: Option<Duration>,
+    ) -> std::io::Result<Option<super::InternalEvent>>;
+
+    fn waker(&self) -> UnixWaker;
+}
 
 #[derive(Debug, Clone)]
-struct PollTimeout {
+pub(crate) struct PollTimeout {
     timeout: Option<Duration>,
     start: Instant,
 }
 
 impl PollTimeout {
-    fn new(timeout: Option<Duration>) -> Self {
+    pub fn new(timeout: Option<Duration>) -> Self {
         Self {
             timeout,
             start: Instant::now(),
         }
     }
 
-    fn leftover(&self) -> Option<Duration> {
+    pub fn elapsed(&self) -> bool {
+        self.timeout
+            .map(|timeout| self.start.elapsed() >= timeout)
+            .unwrap_or(false)
+    }
+
+    pub fn leftover(&self) -> Option<Duration> {
         self.timeout.map(|timeout| {
             let elapsed = self.start.elapsed();
 
@@ -35,13 +60,4 @@ impl PollTimeout {
             }
         })
     }
-}
-
-pub(crate) trait EventSource: Send + Sync {
-    fn try_read(
-        &mut self,
-        timeout: Option<Duration>,
-    ) -> std::io::Result<Option<super::InternalEvent>>;
-
-    fn waker(&self) -> Waker;
 }
