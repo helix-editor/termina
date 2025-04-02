@@ -19,5 +19,16 @@ bitflags = "2"
 rustix = { version = "1", default-features = false, features = ["std", "stdio", "termios", "event", "io_uring"] }
 signal-hook = "0.3"
 
-[target.'cfg(windows)'.dependencies]
-windows-sys = { version = "0.59", default-features = false, features = [] }
+[target.'cfg(windows)'.dependencies.windows-sys]
+version = "0.59"
+default-features = false
+# https://microsoft.github.io/windows-rs/features/#/0.59.0/search
+features = [
+  # Interaction with the legacy and modern console APIs.
+  "Win32_System_Console",
+  # Writing files (including console handles).
+  "Win32_Storage_FileSystem",
+  "Win32_System_IO",
+  # Setting of "code pages" (encodings) for the console handles to use.
+  "Win32_Globalization",
+]

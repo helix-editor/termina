@@ -78,6 +78,7 @@ fn open_pty() -> io::Result<(FileDescriptor, FileDescriptor)> {
 pub struct UnixTerminal {
     // Read and write handles to stdin/stdout or `/dev/tty`
     read: FileDescriptor,
+    // TODO: buffer this writer.
     write: FileDescriptor,
     /// The termios of the PTY's writer detected during `Self::new`.
     original_termios: Termios,
