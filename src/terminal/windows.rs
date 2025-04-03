@@ -304,7 +304,7 @@ impl Drop for WindowsTerminal {
     fn drop(&mut self) {
         // TODO: regular VT exit stuff like the UnixTerminal: make the cursor visible, turn off
         // bracketed paste, etc...
-        self.exit_alternate_screen().unwrap();
+        self.enter_main_screen().unwrap();
         self.output.flush().unwrap();
         self.input.set_mode(self.original_input_mode).unwrap();
         self.output
@@ -340,7 +340,7 @@ impl Terminal for WindowsTerminal {
         Ok(())
     }
 
-    fn exit_raw_mode(&mut self) -> io::Result<()> {
+    fn enter_cooked_mode(&mut self) -> io::Result<()> {
         let mode = self.output.get_mut().get_mode()?;
         self.output
             .get_mut()
@@ -361,7 +361,7 @@ impl Terminal for WindowsTerminal {
         todo!()
     }
 
-    fn exit_alternate_screen(&mut self) -> io::Result<()> {
+    fn enter_main_screen(&mut self) -> io::Result<()> {
         todo!()
     }
 

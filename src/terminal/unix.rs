@@ -6,6 +6,7 @@ use std::{
 };
 
 use crate::{
+    escape,
     event::{reader::InternalEventReader, source::UnixEventSource, InternalEvent},
     EventStream,
 };
@@ -87,6 +88,7 @@ pub struct UnixTerminal {
     write: BufWriter<FileDescriptor>,
     /// The termios of the PTY's writer detected during `Self::new`.
     original_termios: Termios,
+    is_in_alternate_screen: bool,
 }
 
 impl UnixTerminal {
@@ -100,6 +102,7 @@ impl UnixTerminal {
             reader,
             write: BufWriter::with_capacity(BUF_SIZE, write),
             original_termios,
+            is_in_alternate_screen: false,
         })
     }
 }
@@ -120,7 +123,7 @@ impl Terminal for UnixTerminal {
         Ok(())
     }
 
-    fn exit_raw_mode(&mut self) -> io::Result<()> {
+    fn enter_cooked_mode(&mut self) -> io::Result<()> {
         termios::tcsetattr(
             self.write.get_ref(),
             termios::OptionalActions::Now,
@@ -130,12 +133,19 @@ impl Terminal for UnixTerminal {
     }
 
     fn enter_alternate_screen(&mut self) -> std::io::Result<()> {
-        // TODO: need escape sequences here.
-        todo!()
+        if !self.is_in_alternate_screen {
+            write!(self.write, "{}", escape::csi::ENTER_ALTERNATE_SCREEN)?;
+            self.is_in_alternate_screen = true;
+        }
+        Ok(())
     }
 
-    fn exit_alternate_screen(&mut self) -> std::io::Result<()> {
-        todo!()
+    fn enter_main_screen(&mut self) -> std::io::Result<()> {
+        if self.is_in_alternate_screen {
+            write!(self.write, "{}", escape::csi::EXIT_ALTERNATE_SCREEN)?;
+            self.is_in_alternate_screen = false;
+        }
+        Ok(())
     }
 
     fn get_dimensions(&mut self) -> io::Result<(u16, u16)> {
@@ -164,7 +174,7 @@ impl Terminal for UnixTerminal {
 
 impl Drop for UnixTerminal {
     fn drop(&mut self) {
-        self.exit_alternate_screen().unwrap();
+        self.enter_main_screen().unwrap();
         termios::tcsetattr(
             self.write.get_ref(),
             termios::OptionalActions::Now,
