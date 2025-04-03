@@ -22,7 +22,7 @@ pub type PlatformTerminal = UnixTerminal;
 #[cfg(windows)]
 pub type PlatformTerminal = WindowsTerminal;
 
-pub trait Terminal {
+pub trait Terminal: io::Write {
     fn enter_raw_mode(&mut self) -> io::Result<()>;
     fn exit_raw_mode(&mut self) -> io::Result<()>;
     fn enter_alternate_screen(&mut self) -> io::Result<()>;

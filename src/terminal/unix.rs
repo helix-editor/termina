@@ -1,7 +1,7 @@
 use rustix::termios::{self, Termios};
 use std::{
     fs,
-    io::{self, BufWriter, IsTerminal as _},
+    io::{self, BufWriter, IsTerminal as _, Write as _},
     os::unix::prelude::*,
 };
 
@@ -171,5 +171,16 @@ impl Drop for UnixTerminal {
             &self.original_termios,
         )
         .expect("failed to restore termios state");
+        self.write.flush().unwrap();
+    }
+}
+
+impl io::Write for UnixTerminal {
+    fn write(&mut self, buf: &[u8]) -> io::Result<usize> {
+        self.write.write(buf)
+    }
+
+    fn flush(&mut self) -> io::Result<()> {
+        self.write.flush()
     }
 }
