@@ -8,7 +8,7 @@ use std::time::{Duration, Instant};
 #[cfg(unix)]
 pub(crate) use unix::{UnixEventSource, UnixWaker};
 #[cfg(windows)]
-pub(crate) use windows::{Waker, WindowsEventSource};
+pub(crate) use windows::{WindowsEventSource, WindowsWaker};
 
 #[cfg(unix)]
 pub(crate) type PlatformEventSource = UnixEventSource;
@@ -26,7 +26,7 @@ pub(crate) trait EventSource: Send + Sync {
         timeout: Option<Duration>,
     ) -> std::io::Result<Option<super::InternalEvent>>;
 
-    fn waker(&self) -> UnixWaker;
+    fn waker(&self) -> PlatformWaker;
 }
 
 #[derive(Debug, Clone)]

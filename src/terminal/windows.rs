@@ -16,7 +16,7 @@ use windows_sys::Win32::{
     },
 };
 
-use crate::{event::source::WindowsEventSource, EventSource};
+use crate::{event::source::WindowsEventSource, EventStream};
 
 use super::Terminal;
 
@@ -365,7 +365,7 @@ impl Terminal for WindowsTerminal {
     }
 
     fn event_stream(&self) -> io::Result<EventStream> {
-        let source = WindowsEventSource::new(self.input.try_clone()?);
+        let source = WindowsEventSource::new(self.input.try_clone()?)?;
         Ok(EventStream::new(source))
     }
 }

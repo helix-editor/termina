@@ -8,7 +8,7 @@ use super::{
 };
 
 #[derive(Debug, Clone)]
-pub struct InternalEventReader {
+pub(crate) struct InternalEventReader {
     shared: Arc<Mutex<Shared>>,
 }
 

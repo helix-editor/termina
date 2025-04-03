@@ -62,7 +62,7 @@ impl TrueColor {
     }
 
     /// The floats are expected to be in the range `0.0..=1.0`.
-    pub const fn new_f32(red: f32, green: f32, blue: f32) -> Self {
+    pub fn new_f32(red: f32, green: f32, blue: f32) -> Self {
         let red = (red * 255.) as u8;
         let green = (green * 255.) as u8;
         let blue = (blue * 255.) as u8;

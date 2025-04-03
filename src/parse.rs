@@ -1,7 +1,7 @@
 use crate::event::InternalEvent;
 
 #[derive(Debug)]
-pub struct Parser {
+pub(crate) struct Parser {
     buffer: Vec<u8>,
 }
 
