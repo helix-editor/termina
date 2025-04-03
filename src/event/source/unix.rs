@@ -9,12 +9,14 @@ use parking_lot::Mutex;
 use rustix::termios;
 use signal_hook::SigId;
 
-use crate::{event::InternalEvent, terminal::FileDescriptor, InputEvent};
+use crate::{event::InternalEvent, parse::Parser, terminal::FileDescriptor, InputEvent};
 
 use super::{EventSource, PollTimeout};
 
 #[derive(Debug)]
 pub struct UnixEventSource {
+    parser: Parser,
+    buffer: [u8; 1024],
     read: FileDescriptor,
     write: FileDescriptor,
     sigwinch_id: SigId,
@@ -48,6 +50,8 @@ impl UnixEventSource {
         wake_pipe_write.set_nonblocking(true)?;
 
         Ok(Self {
+            parser: Default::default(),
+            buffer: [0; 1024],
             read,
             write,
             sigwinch_id,
@@ -74,28 +78,36 @@ impl EventSource for UnixEventSource {
     fn try_read(&mut self, timeout: Option<Duration>) -> io::Result<Option<InternalEvent>> {
         let timeout = PollTimeout::new(timeout);
 
-        let mut poll_set = PollSet::new([
-            PollMember::new(&self.read),
-            PollMember::new(&self.sigwinch_pipe),
-            PollMember::new(&self.wake_pipe),
-        ]);
-
         while timeout.leftover().map_or(true, |t| !t.is_zero()) {
-            // TODO: return buffered events from the parser.
-
-            match poll_set.poll(timeout.leftover()) {
-                Ok(_) => (),
-                Err(err) if err.kind() == io::ErrorKind::Interrupted => continue,
-                Err(err) => return Err(err),
+            if let Some(event) = self.parser.next() {
+                return Ok(Some(event));
             }
 
+            let [read_ready, sigwinch_ready, wake_ready] = match poll(
+                [&self.read, &self.sigwinch_pipe, &self.wake_pipe],
+                timeout.leftover(),
+            ) {
+                Ok(ready) => ready,
+                Err(err) if err.kind() == io::ErrorKind::Interrupted => continue,
+                Err(err) => return Err(err),
+            };
+
             // The input/read pipe has data.
-            if poll_set.is_ready(0) {
-                todo!("read the bytes and pass them to the parser.")
+            if read_ready {
+                let read_count = read_complete(&mut self.read, &mut self.buffer)?;
+                if read_count > 0 {
+                    todo!("advance the parser");
+                }
+                if let Some(event) = self.parser.next() {
+                    return Ok(Some(event));
+                }
+                if read_count == 0 {
+                    break;
+                }
             }
 
             // SIGWINCH received.
-            if poll_set.is_ready(1) {
+            if sigwinch_ready {
                 // Drain the pipe.
                 while read_complete(&self.wake_pipe, &mut [0; 1024])? != 0 {}
 
@@ -108,9 +120,10 @@ impl EventSource for UnixEventSource {
             }
 
             // Waker has awoken.
-            if poll_set.is_ready(2) {
+            if wake_ready {
                 // Drain the pipe.
                 while read_complete(&self.wake_pipe, &mut [0; 1024])? != 0 {}
+
                 return Err(io::Error::new(
                     io::ErrorKind::Interrupted,
                     "Poll operation was woken up",
@@ -135,113 +148,71 @@ fn read_complete<F: Read>(mut file: F, buf: &mut [u8]) -> io::Result<usize> {
     }
 }
 
-struct PollMember<'a> {
-    fd: &'a dyn AsFd,
-    is_ready: bool,
-}
-
-impl<'a> PollMember<'a> {
-    fn new(fd: &'a dyn AsFd) -> Self {
-        Self {
-            fd,
-            is_ready: false,
-        }
-    }
-}
-
 /// A small abstraction over platform specific polling behavior.
 ///
 /// macOS `poll(2)` doesn't work on file descriptors to `/dev/tty` so we need to use `select(2)`
-/// instead. This module provides a `Set` type which abstracts over the parts of `poll(2)` and
+/// instead. This provides a function which abstracts over the parts of `poll(2)` and
 /// `select(2)` we want. Specifically we are looking for `POLLIN` events from `poll(2)` and we
 /// consider that to be "ready."
 ///
 /// This module is not meant to be generic. We consider `POLLIN` to be "ready" and do not look at
 /// other poll flags. For the sake of simplicity we also only allow polling exactly three FDs at
 /// a time - the exact amount we need for the event source.
-struct PollSet<'a>([PollMember<'a>; 3]);
+fn poll(fds: [&dyn AsFd; 3], timeout: Option<Duration>) -> std::io::Result<[bool; 3]> {
+    use rustix::fs::Timespec;
 
-impl<'a> PollSet<'a> {
-    fn new(members: [PollMember<'a>; 3]) -> Self {
-        Self(members)
+    #[cfg_attr(target_os = "macos", allow(dead_code))]
+    fn poll2(fds: [&dyn AsFd; 3], timeout: Option<&Timespec>) -> io::Result<[bool; 3]> {
+        use rustix::event::{PollFd, PollFlags};
+        let mut fds = [
+            PollFd::new(&fds[0], PollFlags::IN),
+            PollFd::new(&fds[1], PollFlags::IN),
+            PollFd::new(&fds[2], PollFlags::IN),
+        ];
+
+        rustix::event::poll(&mut fds, timeout)?;
+
+        Ok([
+            fds[0].revents().contains(PollFlags::IN),
+            fds[1].revents().contains(PollFlags::IN),
+            fds[2].revents().contains(PollFlags::IN),
+        ])
     }
 
-    fn is_ready(&self, member: usize) -> bool {
-        self.0[member].is_ready
-    }
+    #[cfg_attr(not(target_os = "macos"), allow(dead_code))]
+    fn select2(fds: [&dyn AsFd; 3], timeout: Option<&Timespec>) -> rustix::io::Result<[bool; 3]> {
+        use rustix::event::{fd_set_insert, fd_set_num_elements, FdSetElement, FdSetIter};
+        use std::os::fd::AsRawFd;
 
-    fn poll(&mut self, timeout: Option<Duration>) -> std::io::Result<()> {
-        let timespec = timeout.map(|timeout| timeout.try_into().unwrap());
-        self.poll_impl(timespec.as_ref()).map_err(Into::into)
-    }
-}
+        let fds = [
+            fds[0].as_fd().as_raw_fd(),
+            fds[1].as_fd().as_raw_fd(),
+            fds[2].as_fd().as_raw_fd(),
+        ];
+        // The array is non-empty so `max()` cannot return `None`.
+        let nfds = fds.iter().copied().max().unwrap() + 1;
 
-#[cfg(not(target_os = "macos"))]
-mod poll {
-    use rustix::{
-        event::{PollFd, PollFlags},
-        fs::Timespec,
-    };
-
-    use super::*;
-
-    impl PollSet<'_> {
-        pub(super) fn poll_impl(&mut self, timeout: Option<&Timespec>) -> rustix::io::Result<()> {
-            let mut fds = [
-                PollFd::new(&self.0[0].fd, PollFlags::IN),
-                PollFd::new(&self.0[1].fd, PollFlags::IN),
-                PollFd::new(&self.0[2].fd, PollFlags::IN),
-            ];
-
-            rustix::event::poll(&mut fds, timeout)?;
-
-            self.0[0].is_ready = fds[0].revents().contains(PollFlags::IN);
-            self.0[1].is_ready = fds[1].revents().contains(PollFlags::IN);
-            self.0[2].is_ready = fds[2].revents().contains(PollFlags::IN);
-
-            Ok(())
+        let mut readfds = vec![FdSetElement::default(); fd_set_num_elements(fds.len(), nfds)];
+        for fd in fds {
+            fd_set_insert(&mut readfds, fd);
         }
-    }
-}
 
-#[cfg(target_os = "macos")]
-mod select {
-    use std::os::fd::AsRawFd;
+        unsafe { rustix::event::select(nfds, Some(&mut readfds), None, None, timeout) }?;
 
-    use rustix::{
-        event::{fd_set_insert, fd_set_num_elements, FdSetElement, FdSetIter},
-        fs::Timespec,
-    };
-
-    use super::*;
-
-    impl PollSet<'_> {
-        pub(super) fn poll_impl(&mut self, timeout: Option<&Timespec>) -> rustix::io::Result<()> {
-            let nfds = self
-                .0
-                .iter()
-                .map(|member| member.fd.as_fd().as_raw_fd())
-                .max()
-                // `self.members` is non-empty
-                .unwrap()
-                + 1;
-
-            let mut readfds =
-                vec![FdSetElement::default(); fd_set_num_elements(self.0.len(), nfds)];
-            for member in self.0.iter() {
-                fd_set_insert(&mut readfds, member.fd.as_fd().as_raw_fd());
+        let mut ready = [false; 3];
+        for (fd, is_ready) in fds.iter().copied().zip(ready.iter_mut()) {
+            if FdSetIter::new(&readfds).any(|set_fd| set_fd == fd) {
+                *is_ready = true;
             }
-
-            unsafe { rustix::event::select(nfds, Some(&mut readfds), None, None, timeout) }?;
-
-            for member in self.0.iter_mut() {
-                let member_fd = member.fd.as_fd().as_raw_fd();
-                if FdSetIter::new(&readfds).any(|set_fd| set_fd == member_fd) {
-                    member.is_ready = true;
-                }
-            }
-
-            Ok(())
         }
+        Ok(ready)
     }
+
+    #[cfg(not(target_os = "macos"))]
+    use poll2 as poll_impl;
+    #[cfg(target_os = "macos")]
+    use select2 as poll_impl;
+
+    let timespec = timeout.map(|timeout| timeout.try_into().unwrap());
+    poll_impl(fds, timespec.as_ref())
 }
