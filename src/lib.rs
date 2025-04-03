@@ -4,4 +4,4 @@ pub(crate) mod parse;
 pub mod style;
 pub mod terminal;
 
-pub use event::{stream::EventStream, InputEvent};
+pub use event::{stream::EventStream, Event};

@@ -16,7 +16,7 @@ use futures_core::Stream;
 use super::{
     reader::InternalEventReader,
     source::{EventSource, PlatformEventSource, PlatformWaker},
-    InputEvent, InternalEvent,
+    Event, InternalEvent,
 };
 
 #[derive(Debug)]
@@ -44,7 +44,7 @@ impl EventStream {
 
         let task_reader = reader.clone();
         let filter =
-            |internal_event: &InternalEvent| matches!(internal_event, InternalEvent::InputEvent(_));
+            |internal_event: &InternalEvent| matches!(internal_event, InternalEvent::Event(_));
         thread::spawn(move || {
             while let Ok(task) = receiver.recv() {
                 loop {
@@ -80,15 +80,15 @@ impl Drop for EventStream {
 }
 
 impl Stream for EventStream {
-    type Item = io::Result<InputEvent>;
+    type Item = io::Result<Event>;
 
     fn poll_next(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Option<Self::Item>> {
         let filter =
-            |internal_event: &InternalEvent| matches!(internal_event, InternalEvent::InputEvent(_));
+            |internal_event: &InternalEvent| matches!(internal_event, InternalEvent::Event(_));
 
         match self.reader.poll(Some(Duration::from_secs(0)), filter) {
             Ok(true) => match self.reader.read(filter) {
-                Ok(InternalEvent::InputEvent(event)) => Poll::Ready(Some(Ok(event))),
+                Ok(InternalEvent::Event(event)) => Poll::Ready(Some(Ok(event))),
                 Err(err) => Poll::Ready(Some(Err(err))),
                 // _ => unreachable!(),
             },

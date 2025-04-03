@@ -2,12 +2,20 @@ pub(crate) mod reader;
 pub(crate) mod source;
 pub(crate) mod stream;
 
-#[derive(Debug, PartialEq, Eq)]
-pub enum InputEvent {
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum Event {
+    /// The window was resized to the given dimensions.
     WindowResized { rows: u16, cols: u16 },
+    /// A "bracketed" paste.
+    ///
+    /// Normally pasting into a terminal with Ctrl+v (or Super+v) enters the pasted text as if
+    /// you had typed the keys individually. Terminals commonly support ["bracketed
+    /// paste"](https://en.wikipedia.org/wiki/Bracketed-paste) now however, which uses an escape
+    /// sequence to deliver the entire pasted content.
+    Paste(String),
 }
 
 #[derive(Debug, PartialEq, Eq)]
 pub(crate) enum InternalEvent {
-    InputEvent(InputEvent),
+    Event(Event),
 }

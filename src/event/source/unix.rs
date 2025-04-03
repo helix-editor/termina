@@ -9,7 +9,7 @@ use parking_lot::Mutex;
 use rustix::termios;
 use signal_hook::SigId;
 
-use crate::{event::InternalEvent, parse::Parser, terminal::FileDescriptor, InputEvent};
+use crate::{event::InternalEvent, parse::Parser, terminal::FileDescriptor, Event};
 
 use super::{EventSource, PollTimeout};
 
@@ -112,11 +112,11 @@ impl EventSource for UnixEventSource {
                 while read_complete(&self.wake_pipe, &mut [0; 1024])? != 0 {}
 
                 let winsize = termios::tcgetwinsize(&self.write)?;
-                let event = InputEvent::WindowResized {
+                let event = Event::WindowResized {
                     rows: winsize.ws_row,
                     cols: winsize.ws_col,
                 };
-                return Ok(Some(InternalEvent::InputEvent(event)));
+                return Ok(Some(InternalEvent::Event(event)));
             }
 
             // Waker has awoken.
