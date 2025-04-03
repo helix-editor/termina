@@ -13,11 +13,7 @@ use std::{
 
 use futures_core::Stream;
 
-use super::{
-    reader::InternalEventReader,
-    source::{EventSource, PlatformEventSource, PlatformWaker},
-    Event, InternalEvent,
-};
+use super::{reader::InternalEventReader, source::PlatformWaker, Event, InternalEvent};
 
 #[derive(Debug)]
 pub struct EventStream {
@@ -36,9 +32,8 @@ struct Task {
 }
 
 impl EventStream {
-    pub(crate) fn new(source: PlatformEventSource) -> Self {
-        let waker = source.waker();
-        let reader = InternalEventReader::new(source);
+    pub(crate) fn new(reader: InternalEventReader) -> Self {
+        let waker = reader.waker();
 
         let (task_sender, receiver) = mpsc::sync_channel::<Task>(1);
 

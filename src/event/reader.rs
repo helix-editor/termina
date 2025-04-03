@@ -3,7 +3,7 @@ use std::{collections::VecDeque, io, sync::Arc, time::Duration};
 use parking_lot::Mutex;
 
 use super::{
-    source::{EventSource as _, PlatformEventSource, PollTimeout},
+    source::{EventSource as _, PlatformEventSource, PlatformWaker, PollTimeout},
     InternalEvent,
 };
 
@@ -22,6 +22,11 @@ impl InternalEventReader {
         Self {
             shared: Arc::new(Mutex::new(shared)),
         }
+    }
+
+    pub fn waker(&self) -> PlatformWaker {
+        let reader = self.shared.lock();
+        reader.source.waker()
     }
 
     pub fn poll<F>(&self, timeout: Option<Duration>, filter: F) -> io::Result<bool>

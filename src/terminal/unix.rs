@@ -5,7 +5,10 @@ use std::{
     os::unix::prelude::*,
 };
 
-use crate::{event::source::UnixEventSource, EventStream};
+use crate::{
+    event::{reader::InternalEventReader, source::UnixEventSource, InternalEvent},
+    EventStream,
+};
 
 use super::Terminal;
 
@@ -78,21 +81,23 @@ fn open_pty() -> io::Result<(FileDescriptor, FileDescriptor)> {
 
 #[derive(Debug)]
 pub struct UnixTerminal {
-    // Read and write handles to stdin/stdout or `/dev/tty`
-    read: FileDescriptor,
+    /// Shared wrapper around the reader (stdin or `/dev/tty`)
+    reader: InternalEventReader,
+    /// Buffered handle to the writer (stdout or `/dev/tty`)
     write: BufWriter<FileDescriptor>,
     /// The termios of the PTY's writer detected during `Self::new`.
     original_termios: Termios,
-    // parser...
 }
 
 impl UnixTerminal {
     pub fn new() -> io::Result<Self> {
         let (read, write) = open_pty()?;
+        let source = UnixEventSource::new(read, write.try_clone()?)?;
         let original_termios = termios::tcgetattr(&write)?;
+        let reader = InternalEventReader::new(source);
 
         Ok(Self {
-            read,
+            reader,
             write: BufWriter::with_capacity(BUF_SIZE, write),
             original_termios,
         })
@@ -138,10 +143,22 @@ impl Terminal for UnixTerminal {
         Ok((winsize.ws_row, winsize.ws_col))
     }
 
-    fn event_stream(&self) -> io::Result<EventStream> {
-        let source =
-            UnixEventSource::new(self.read.try_clone()?, self.write.get_ref().try_clone()?)?;
-        Ok(EventStream::new(source))
+    fn event_stream(&self) -> EventStream {
+        EventStream::new(self.reader.clone())
+    }
+
+    fn poll(&self, timeout: Option<std::time::Duration>) -> io::Result<bool> {
+        self.reader
+            .poll(timeout, |event| matches!(event, InternalEvent::Event(_)))
+    }
+
+    fn read(&self) -> io::Result<crate::Event> {
+        self.reader
+            .read(|event| matches!(event, InternalEvent::Event(_)))
+            .map(|event| match event {
+                InternalEvent::Event(event) => event,
+                // _ => unreachable!(),
+            })
     }
 }
 
