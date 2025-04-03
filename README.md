@@ -11,4 +11,6 @@ API-wise Termina aims to merge the nicer parts of crossterm and termwiz. In part
 
 Currently Crossterm does not support reading VT sequences on Windows while Termwiz does. Termina will bail if the host terminal does not support VT.
 
+Note that there are some places where Termina reaches into the Windows Console API. These match Microsoft's recommendation for [exceptions for using Windows Console APIs](https://learn.microsoft.com/en-us/windows/console/classic-vs-vt#exceptions-for-using-windows-console-apis).
+
 Termina also aims to minimize dependencies. Both Crossterm and Termwiz use the `winapi` crate which is unmaintained and superseded by the official `windows-sys` crate from Microsoft. Termina also aims to drop heavier dependencies from Crossterm like `mio`.

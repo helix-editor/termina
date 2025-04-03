@@ -7,6 +7,9 @@ use std::{
 };
 
 use windows_sys::Win32::{
+    // TODO: experiment with Windows compile times by turning off the "Win32_Globalization"
+    // feature and hard-coding this to `65001`. This `CP_UTF8` constant is the only thing used
+    // from that feature and it is unimaginable that it would change in the future.
     Globalization::CP_UTF8,
     Storage::FileSystem::WriteFile,
     System::Console::{
@@ -108,6 +111,10 @@ impl InputHandle {
         let zeroed: INPUT_RECORD = unsafe { mem::zeroed() };
         res.resize(num_events, zeroed);
         let mut num = 0;
+        // FIXME: <https://learn.microsoft.com/en-us/windows/console/classic-vs-vt#unicode>
+        // > UTF-8 support in the console can be utilized via the A variant of Console APIs
+        // > against console handles after setting the codepage to 65001 or CP_UTF8 with the
+        // > SetConsoleOutputCP and SetConsoleCP methods, as appropriate.
         if unsafe {
             ReadConsoleInputW(
                 self.as_raw_handle(),
