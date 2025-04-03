@@ -194,7 +194,7 @@ impl OutputHandle {
                 io::Error::last_os_error()
             );
         }
-        // NOTE: Unix dimensions are one-indexed. `+1` here to accomodate.
+        // NOTE: Unix dimensions are one-indexed. `+1` here to normalize to Unix convention.
         let rows = info.srWindow.Bottom - info.srWindow.Top + 1;
         let cols = info.srWindow.Right - info.srWindow.Left + 1;
         Ok((rows as u16, cols as u16))

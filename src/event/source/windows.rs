@@ -1,14 +1,16 @@
-use std::{io, os::windows::prelude::*, ptr, sync::Arc, time::Duration};
+use std::{collections::VecDeque, io, os::windows::prelude::*, ptr, sync::Arc, time::Duration};
 
 use windows_sys::Win32::System::Threading;
 
-use crate::{event::InternalEvent, terminal::InputHandle};
+use crate::{event::InternalEvent, parse::Parser, terminal::InputHandle};
 
 use super::{EventSource, PollTimeout};
 
 #[derive(Debug)]
 pub struct WindowsEventSource {
     input: InputHandle,
+    parser: Parser,
+    events: VecDeque<InternalEvent>,
     waker: Arc<EventHandle>,
 }
 
@@ -16,6 +18,8 @@ impl WindowsEventSource {
     pub(crate) fn new(input: InputHandle) -> io::Result<Self> {
         Ok(Self {
             input,
+            parser: Parser::default(),
+            events: VecDeque::with_capacity(32),
             waker: Arc::new(EventHandle::new()?),
         })
     }
@@ -29,13 +33,15 @@ impl EventSource for WindowsEventSource {
     }
 
     fn try_read(&mut self, timeout: Option<Duration>) -> io::Result<Option<InternalEvent>> {
-        use windows_sys::Win32::Foundation::{WAIT_FAILED, WAIT_OBJECT_0, WAIT_TIMEOUT};
+        use windows_sys::Win32::Foundation::{WAIT_FAILED, WAIT_OBJECT_0};
         use Threading::{WaitForMultipleObjects, INFINITE};
 
         let timeout = PollTimeout::new(timeout);
 
         while timeout.leftover().map_or(true, |t| !t.is_zero()) {
-            // TODO: emit any events saved to an input queue (VecDeque)
+            if let Some(event) = self.events.pop_front() {
+                return Ok(Some(event));
+            }
 
             let mut pending = self.input.get_number_of_input_events()?;
 
@@ -46,15 +52,9 @@ impl EventSource for WindowsEventSource {
                     .map(|timeout| timeout.as_millis() as u32)
                     .unwrap_or(INFINITE);
                 let result = unsafe {
-                    WaitForMultipleObjects(
-                        handles.len() as u32,
-                        handles.as_mut_ptr(),
-                        false as i32,
-                        wait,
-                    )
+                    WaitForMultipleObjects(handles.len() as u32, handles.as_mut_ptr(), 0, wait)
                 };
 
-                #[allow(clippy::if_same_then_else)]
                 if result == WAIT_OBJECT_0 {
                     pending = self.input.get_number_of_input_events()?;
                 } else if result == WAIT_OBJECT_0 + 1 {
@@ -70,13 +70,17 @@ impl EventSource for WindowsEventSource {
                             io::Error::last_os_error()
                         ),
                     ));
-                } else if result == WAIT_TIMEOUT {
-                    return Ok(None);
                 } else {
                     return Ok(None);
                 }
             }
+
             let records = self.input.read_console_input(pending)?;
+
+            let events = &mut self.events;
+            self.parser
+                .decode_input_records(&records, |event| events.push_front(event));
+
             // give the records to the parser and then continue with another loop.
             todo!("handle the records");
         }
