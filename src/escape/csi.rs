@@ -12,14 +12,17 @@ pub(crate) const EXIT_ALTERNATE_SCREEN: Csi = Csi::Mode(Mode::ResetDecPrivateMod
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Csi {
     Mode(Mode),
+    Keyboard(Keyboard),
     // TODO...
 }
 
 impl Display for Csi {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        // This here is the "control sequence introducer" (CSI):
         write!(f, "\x1b[")?;
         match self {
             Self::Mode(mode) => mode.fmt(f),
+            Self::Keyboard(keyboard) => keyboard.fmt(f),
         }
     }
 }
@@ -212,6 +215,84 @@ pub enum XtermKeyModifierResource {
     OtherKeys = 4,
 }
 
+// --- Kitty keyboard protocol ---
+//
+// <https://sw.kovidgoyal.net/kitty/keyboard-protocol/>.
+
+bitflags::bitflags! {
+    #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+    pub struct KittyKeyboardFlags: u8 {
+        const NONE = 0;
+        const DISAMBIGUATE_ESCAPE_CODES = 1;
+        const REPORT_EVENT_TYPES = 2;
+        const REPORT_ALTERNATE_KEYS = 4;
+        const REPORT_ALL_KEYS_AS_ESCAPE_CODES = 8;
+        const REPORT_ASSOCIATED_TEXT = 16;
+    }
+}
+
+impl Display for KittyKeyboardFlags {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "{}", self.bits())
+    }
+}
+
+/// CSI sequences for interacting with the [Kitty Keyboard
+/// Protocol](https://sw.kovidgoyal.net/kitty/keyboard-protocol/).
+///
+/// Note that the Kitty Keyboard Protocol requires terminals to maintain different stacks for the
+/// main and alternate screens. This means that applications which use alternate screens do not
+/// need to pop flags (via `Self::PopFlags`) when exiting. By exiting entering the main screen the
+/// flags must be automatically reset by the terminal.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Keyboard {
+    /// Query the current values of the flags.
+    QueryFlags,
+    /// Pushes the given flags onto the terminal's stack.
+    PushFlags(KittyKeyboardFlags),
+    /// Pops the given number of stack entries from the terminal's stack.
+    PopFlags(u8),
+    /// Requests keyboard enhancement with the given flags according to the mode.
+    ///
+    /// Also see [SetKeyboardFlagsMode].
+    ///
+    /// Applications such as editors which enter the alternate screen
+    /// [crate::Terminal::enter_alternate_screen] should prefer `PushFlags` because the flags
+    /// will be automatically dropped by the terminal when entering the main screen.
+    SetFlags {
+        flags: KittyKeyboardFlags,
+        mode: SetKeyboardFlagsMode,
+    },
+}
+
+impl Display for Keyboard {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::QueryFlags => write!(f, "?u"),
+            Self::PushFlags(flags) => write!(f, ">{flags}u"),
+            Self::PopFlags(number) => write!(f, "<{number}u"),
+            Self::SetFlags { flags, mode } => write!(f, "={flags};{mode}u"),
+        }
+    }
+}
+
+/// Controls how the flags passed in [Keyboard::SetFlags] are interpreted by the terminal.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum SetKeyboardFlagsMode {
+    /// Request any of the given flags and reset any flags which are not given.
+    AssignAll = 1,
+    /// Request the given flags and ignore any flags which are not given.
+    SetSpecified = 2,
+    /// Clear the given flags and ignore any flags which are not given.
+    ClearSpecified = 3,
+}
+
+impl Display for SetKeyboardFlagsMode {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "{}", *self as u8)
+    }
+}
+
 #[cfg(test)]
 mod test {
     use super::*;
@@ -220,5 +301,15 @@ mod test {
         // <https://learn.microsoft.com/en-us/windows/console/console-virtual-terminal-sequences#alternate-screen-buffer>
         assert_eq!("\x1b[?1049h", ENTER_ALTERNATE_SCREEN.to_string());
         assert_eq!("\x1b[?1049l", EXIT_ALTERNATE_SCREEN.to_string());
+
+        // Kitty keyboard flags used by Helix and Kakoune at time of writing
+        assert_eq!(
+            "\x1b[>5u",
+            Csi::Keyboard(Keyboard::PushFlags(
+                KittyKeyboardFlags::DISAMBIGUATE_ESCAPE_CODES
+                    | KittyKeyboardFlags::REPORT_ALTERNATE_KEYS
+            ))
+            .to_string()
+        );
     }
 }
