@@ -64,6 +64,38 @@ fn main() -> io::Result<()> {
                 code: KeyCode::Escape,
                 ..
             }) => break,
+            Event::Key(KeyEvent {
+                code: KeyCode::Char('c'),
+                ..
+            }) => {
+                write!(
+                    terminal,
+                    "{}",
+                    csi::Csi::Cursor(csi::Cursor::RequestActivePositionReport),
+                )?;
+                terminal.flush()?;
+                let filter = |event: &Event| {
+                    matches!(
+                        event,
+                        Event::Csi(csi::Csi::Cursor(csi::Cursor::ActivePositionReport { .. }))
+                    )
+                };
+                if terminal.poll(filter, Some(Duration::from_millis(50)))? {
+                    let Event::Csi(csi::Csi::Cursor(csi::Cursor::ActivePositionReport {
+                        line,
+                        col,
+                    })) = terminal.read(filter)?
+                    else {
+                        unreachable!()
+                    };
+                    println!(
+                        "Cursor position: {:?}\r",
+                        (line.get_zero_based(), col.get_zero_based())
+                    );
+                } else {
+                    eprintln!("Failed to read the cursor position within 50msec");
+                }
+            }
             Event::WindowResized { rows, cols } => {
                 let new_size = flush_resize_events(&terminal, (rows, cols));
                 println!("Resize from {size:?} to {new_size:?}\r");
