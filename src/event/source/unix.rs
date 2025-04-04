@@ -39,8 +39,8 @@ impl UnixEventSource {
     pub(crate) fn new(read: FileDescriptor, write: FileDescriptor) -> io::Result<Self> {
         let (sigwinch_pipe, sigwinch_pipe_write) = UnixStream::pair()?;
         let sigwinch_id = signal_hook::low_level::pipe::register(
-            // TODO: hardcode this? Will we use io_uring module elsewhere?
-            rustix::io_uring::Signal::WINCH.as_raw(),
+            // TODO: hardcode this? Will we use the process module elsewhere?
+            rustix::process::Signal::WINCH.as_raw(),
             sigwinch_pipe_write,
         )?;
         sigwinch_pipe.set_nonblocking(true)?;
@@ -159,7 +159,7 @@ fn read_complete<F: Read>(mut file: F, buf: &mut [u8]) -> io::Result<usize> {
 /// other poll flags. For the sake of simplicity we also only allow polling exactly three FDs at
 /// a time - the exact amount we need for the event source.
 fn poll(fds: [&dyn AsFd; 3], timeout: Option<Duration>) -> std::io::Result<[bool; 3]> {
-    use rustix::fs::Timespec;
+    use rustix::event::Timespec;
 
     #[cfg_attr(target_os = "macos", allow(dead_code))]
     fn poll2(fds: [&dyn AsFd; 3], timeout: Option<&Timespec>) -> io::Result<[bool; 3]> {

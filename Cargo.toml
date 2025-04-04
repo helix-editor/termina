@@ -15,8 +15,18 @@ bitflags = "2"
 futures-core = "0.3"
 
 [target.'cfg(unix)'.dependencies]
-rustix = { version = "1", default-features = false, features = ["std", "stdio", "termios", "event", "io_uring"] }
 signal-hook = "0.3"
+
+[target.'cfg(unix)'.dependencies.rustix]
+version = "1"
+default-features = false
+features = [
+  "std",
+  "stdio",
+  "termios",
+  "event",
+  "process",
+]
 
 [target.'cfg(windows)'.dependencies.windows-sys]
 version = "0.59"
