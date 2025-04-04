@@ -1,5 +1,4 @@
 use std::{
-    collections::VecDeque,
     io::{self, Read, Write as _},
     os::{fd::AsFd, unix::net::UnixStream},
     sync::Arc,
@@ -17,7 +16,6 @@ use super::{EventSource, PollTimeout};
 #[derive(Debug)]
 pub struct UnixEventSource {
     parser: Parser,
-    events: VecDeque<InternalEvent>,
     read: FileDescriptor,
     write: FileDescriptor,
     sigwinch_id: SigId,
@@ -52,7 +50,6 @@ impl UnixEventSource {
 
         Ok(Self {
             parser: Default::default(),
-            events: VecDeque::with_capacity(32),
             read,
             write,
             sigwinch_id,
@@ -80,7 +77,7 @@ impl EventSource for UnixEventSource {
         let timeout = PollTimeout::new(timeout);
 
         while timeout.leftover().map_or(true, |t| !t.is_zero()) {
-            if let Some(event) = self.events.pop_front() {
+            if let Some(event) = self.parser.pop() {
                 return Ok(Some(event));
             }
 
@@ -98,14 +95,10 @@ impl EventSource for UnixEventSource {
                 let mut buffer = [0u8; 64];
                 let read_count = read_complete(&mut self.read, &mut buffer)?;
                 if read_count > 0 {
-                    let events = &mut self.events;
-                    self.parser.parse(
-                        &buffer[..read_count],
-                        |event| events.push_back(event),
-                        read_count == buffer.len(),
-                    );
+                    self.parser
+                        .parse(&buffer[..read_count], read_count == buffer.len());
                 }
-                if let Some(event) = self.events.pop_front() {
+                if let Some(event) = self.parser.pop() {
                     return Ok(Some(event));
                 }
                 if read_count == 0 {

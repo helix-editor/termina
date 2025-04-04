@@ -13,7 +13,6 @@ pub(crate) const EXIT_ALTERNATE_SCREEN: Csi = Csi::Mode(Mode::ResetDecPrivateMod
     DecPrivateMode::Code(DecPrivateModeCode::ClearAndEnableAlternateScreen),
 ));
 
-// TODO: no Copy?
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Csi {
     /// "Set Graphics Rendition" (SGR).

@@ -1,26 +1,36 @@
+use std::collections::VecDeque;
+
 use crate::event::InternalEvent;
 
 #[derive(Debug)]
 pub(crate) struct Parser {
     buffer: Vec<u8>,
+    /// Events which have been parsed. Pop out with `Self::pop`.
+    events: VecDeque<InternalEvent>,
 }
 
 impl Default for Parser {
     fn default() -> Self {
         Self {
             buffer: Vec::with_capacity(256),
+            events: VecDeque::with_capacity(32),
         }
     }
 }
 
 impl Parser {
-    pub fn parse<F: FnMut(InternalEvent)>(&mut self, bytes: &[u8], callback: F, maybe_more: bool) {
-        self.buffer.extend_from_slice(bytes);
-        self.process_bytes(callback, maybe_more);
+    /// Reads and removes a parsed event from the parser.
+    pub fn pop(&mut self) -> Option<InternalEvent> {
+        self.events.pop_front()
     }
 
-    fn process_bytes<F: FnMut(InternalEvent)>(&mut self, mut callback: F, maybe_more: bool) {
-        todo!()
+    pub fn parse(&mut self, bytes: &[u8], maybe_more: bool) {
+        self.buffer.extend_from_slice(bytes);
+        self.process_bytes(maybe_more);
+    }
+
+    fn process_bytes(&mut self, maybe_more: bool) {
+        todo!("(more: {maybe_more}), bytes: {:?}", self.buffer);
     }
 }
 
