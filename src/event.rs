@@ -22,11 +22,7 @@ pub enum Event {
     /// paste"](https://en.wikipedia.org/wiki/Bracketed-paste) now however, which uses an escape
     /// sequence to deliver the entire pasted content.
     Paste(String),
-}
-
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub(crate) enum InternalEvent {
-    Event(Event),
+    /// A parsed escape sequence starting with CSI (control sequence introducer).
     Csi(Csi),
 }
 

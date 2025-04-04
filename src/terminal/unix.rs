@@ -6,8 +6,8 @@ use std::{
 };
 
 use crate::{
-    event::{reader::InternalEventReader, source::UnixEventSource, InternalEvent},
-    EventStream,
+    event::{reader::EventReader, source::UnixEventSource},
+    Event, EventStream,
 };
 
 use super::Terminal;
@@ -82,7 +82,7 @@ fn open_pty() -> io::Result<(FileDescriptor, FileDescriptor)> {
 #[derive(Debug)]
 pub struct UnixTerminal {
     /// Shared wrapper around the reader (stdin or `/dev/tty`)
-    reader: InternalEventReader,
+    reader: EventReader,
     /// Buffered handle to the writer (stdout or `/dev/tty`)
     write: BufWriter<FileDescriptor>,
     /// The termios of the PTY's writer detected during `Self::new`.
@@ -94,7 +94,7 @@ impl UnixTerminal {
         let (read, write) = open_pty()?;
         let source = UnixEventSource::new(read, write.try_clone()?)?;
         let original_termios = termios::tcgetattr(&write)?;
-        let reader = InternalEventReader::new(source);
+        let reader = EventReader::new(source);
 
         Ok(Self {
             reader,
@@ -134,22 +134,23 @@ impl Terminal for UnixTerminal {
         Ok((winsize.ws_row, winsize.ws_col))
     }
 
-    fn event_stream(&self) -> EventStream {
-        EventStream::new(self.reader.clone())
+    fn event_stream<F: Fn(&Event) -> bool + Clone + Send + Sync + 'static>(
+        &self,
+        filter: F,
+    ) -> EventStream<F> {
+        EventStream::new(self.reader.clone(), filter)
     }
 
-    fn poll(&self, timeout: Option<std::time::Duration>) -> io::Result<bool> {
-        self.reader
-            .poll(timeout, |event| matches!(event, InternalEvent::Event(_)))
+    fn poll<F: Fn(&Event) -> bool>(
+        &self,
+        filter: F,
+        timeout: Option<std::time::Duration>,
+    ) -> io::Result<bool> {
+        self.reader.poll(timeout, filter)
     }
 
-    fn read(&self) -> io::Result<crate::Event> {
-        self.reader
-            .read(|event| matches!(event, InternalEvent::Event(_)))
-            .map(|event| match event {
-                InternalEvent::Event(event) => event,
-                _ => unreachable!(),
-            })
+    fn read<F: Fn(&Event) -> bool>(&self, filter: F) -> io::Result<Event> {
+        self.reader.read(filter)
     }
 }
 

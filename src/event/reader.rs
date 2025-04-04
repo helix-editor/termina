@@ -4,15 +4,15 @@ use parking_lot::Mutex;
 
 use super::{
     source::{EventSource as _, PlatformEventSource, PlatformWaker, PollTimeout},
-    InternalEvent,
+    Event,
 };
 
 #[derive(Debug, Clone)]
-pub(crate) struct InternalEventReader {
+pub(crate) struct EventReader {
     shared: Arc<Mutex<Shared>>,
 }
 
-impl InternalEventReader {
+impl EventReader {
     pub fn new(source: PlatformEventSource) -> Self {
         let shared = Shared {
             events: VecDeque::with_capacity(32),
@@ -31,7 +31,7 @@ impl InternalEventReader {
 
     pub fn poll<F>(&self, timeout: Option<Duration>, filter: F) -> io::Result<bool>
     where
-        F: Fn(&InternalEvent) -> bool,
+        F: Fn(&Event) -> bool,
     {
         let (mut reader, timeout) = if let Some(timeout) = timeout {
             let poll_timeout = PollTimeout::new(Some(timeout));
@@ -46,9 +46,9 @@ impl InternalEventReader {
         reader.poll(timeout, filter)
     }
 
-    pub fn read<F>(&self, filter: F) -> io::Result<InternalEvent>
+    pub fn read<F>(&self, filter: F) -> io::Result<Event>
     where
-        F: Fn(&InternalEvent) -> bool,
+        F: Fn(&Event) -> bool,
     {
         let mut reader = self.shared.lock();
         reader.read(filter)
@@ -57,15 +57,15 @@ impl InternalEventReader {
 
 #[derive(Debug)]
 struct Shared {
-    events: VecDeque<InternalEvent>,
+    events: VecDeque<Event>,
     source: PlatformEventSource,
-    skipped_events: Vec<InternalEvent>,
+    skipped_events: Vec<Event>,
 }
 
 impl Shared {
     fn poll<F>(&mut self, timeout: Option<Duration>, filter: F) -> io::Result<bool>
     where
-        F: Fn(&InternalEvent) -> bool,
+        F: Fn(&Event) -> bool,
     {
         if self.events.iter().any(&filter) {
             return Ok(true);
@@ -101,9 +101,9 @@ impl Shared {
         }
     }
 
-    fn read<F>(&mut self, filter: F) -> io::Result<InternalEvent>
+    fn read<F>(&mut self, filter: F) -> io::Result<Event>
     where
-        F: Fn(&InternalEvent) -> bool,
+        F: Fn(&Event) -> bool,
     {
         let mut skipped_events = VecDeque::new();
 

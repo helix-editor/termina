@@ -9,7 +9,7 @@ use parking_lot::Mutex;
 use rustix::termios;
 use signal_hook::SigId;
 
-use crate::{event::InternalEvent, parse::Parser, terminal::FileDescriptor, Event};
+use crate::{parse::Parser, terminal::FileDescriptor, Event};
 
 use super::{EventSource, PollTimeout};
 
@@ -73,7 +73,7 @@ impl EventSource for UnixEventSource {
         }
     }
 
-    fn try_read(&mut self, timeout: Option<Duration>) -> io::Result<Option<InternalEvent>> {
+    fn try_read(&mut self, timeout: Option<Duration>) -> io::Result<Option<Event>> {
         let timeout = PollTimeout::new(timeout);
 
         while timeout.leftover().map_or(true, |t| !t.is_zero()) {
@@ -116,7 +116,7 @@ impl EventSource for UnixEventSource {
                     rows: winsize.ws_row,
                     cols: winsize.ws_col,
                 };
-                return Ok(Some(InternalEvent::Event(event)));
+                return Ok(Some(event));
             }
 
             // Waker has awoken.

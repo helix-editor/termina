@@ -20,8 +20,8 @@ use windows_sys::Win32::{
 };
 
 use crate::{
-    event::{reader::InternalEventReader, source::WindowsEventSource, InternalEvent},
-    EventStream,
+    event::{reader::InternalEventReader, source::WindowsEventSource},
+    Event, EventStream,
 };
 
 use super::Terminal;
@@ -366,22 +366,23 @@ impl Terminal for WindowsTerminal {
         self.output.get_mut().get_dimensions()
     }
 
-    fn event_stream(&self) -> EventStream {
-        EventStream::new(self.reader.clone())
+    fn event_stream<F: Fn(&Event) -> bool + Clone + Send + Sync + 'static>(
+        &self,
+        filter: F,
+    ) -> EventStream<F> {
+        EventStream::new(self.reader.clone(), filter)
     }
 
-    fn poll(&self, timeout: Option<std::time::Duration>) -> io::Result<bool> {
-        self.reader
-            .poll(timeout, |event| matches!(event, InternalEvent::Event(_)))
+    fn poll<F: Fn(&Event) -> bool>(
+        &self,
+        filter: F,
+        timeout: Option<std::time::Duration>,
+    ) -> io::Result<bool> {
+        self.reader.poll(timeout, filter)
     }
 
-    fn read(&self) -> io::Result<crate::Event> {
-        self.reader
-            .read(|event| matches!(event, InternalEvent::Event(_)))
-            .map(|event| match event {
-                InternalEvent::Event(event) => event,
-                _ => unreachable!(),
-            })
+    fn read<F: Fn(&Event) -> bool>(&self, filter: F) -> io::Result<Event> {
+        self.reader.read(filter)
     }
 }
 

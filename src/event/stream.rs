@@ -13,12 +13,13 @@ use std::{
 
 use futures_core::Stream;
 
-use super::{reader::InternalEventReader, source::PlatformWaker, Event, InternalEvent};
+use super::{reader::EventReader, source::PlatformWaker, Event};
 
 #[derive(Debug)]
-pub struct EventStream {
+pub struct EventStream<F: Fn(&Event) -> bool> {
     waker: PlatformWaker,
-    reader: InternalEventReader,
+    filter: F,
+    reader: EventReader,
     stream_wake_task_executed: Arc<AtomicBool>,
     stream_wake_task_should_shutdown: Arc<AtomicBool>,
     task_sender: SyncSender<Task>,
@@ -31,19 +32,21 @@ struct Task {
     stream_wake_task_should_shutdown: Arc<AtomicBool>,
 }
 
-impl EventStream {
-    pub(crate) fn new(reader: InternalEventReader) -> Self {
+impl<F> EventStream<F>
+where
+    F: Fn(&Event) -> bool + Clone + Send + Sync + 'static,
+{
+    pub(crate) fn new(reader: EventReader, filter: F) -> Self {
         let waker = reader.waker();
 
         let (task_sender, receiver) = mpsc::sync_channel::<Task>(1);
 
         let task_reader = reader.clone();
-        let filter =
-            |internal_event: &InternalEvent| matches!(internal_event, InternalEvent::Event(_));
+        let task_filter = filter.clone();
         thread::spawn(move || {
             while let Ok(task) = receiver.recv() {
                 loop {
-                    if let Ok(true) = task_reader.poll(None, filter) {
+                    if let Ok(true) = task_reader.poll(None, &task_filter) {
                         break;
                     }
                     if task.stream_wake_task_should_shutdown.load(Ordering::SeqCst) {
@@ -58,6 +61,7 @@ impl EventStream {
 
         Self {
             waker,
+            filter,
             reader,
             stream_wake_task_executed: Default::default(),
             stream_wake_task_should_shutdown: Default::default(),
@@ -66,7 +70,7 @@ impl EventStream {
     }
 }
 
-impl Drop for EventStream {
+impl<F: Fn(&Event) -> bool> Drop for EventStream<F> {
     fn drop(&mut self) {
         self.stream_wake_task_should_shutdown
             .store(true, Ordering::SeqCst);
@@ -74,18 +78,14 @@ impl Drop for EventStream {
     }
 }
 
-impl Stream for EventStream {
+impl<F: Fn(&Event) -> bool> Stream for EventStream<F> {
     type Item = io::Result<Event>;
 
     fn poll_next(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Option<Self::Item>> {
-        let filter =
-            |internal_event: &InternalEvent| matches!(internal_event, InternalEvent::Event(_));
-
-        match self.reader.poll(Some(Duration::from_secs(0)), filter) {
-            Ok(true) => match self.reader.read(filter) {
-                Ok(InternalEvent::Event(event)) => Poll::Ready(Some(Ok(event))),
+        match self.reader.poll(Some(Duration::from_secs(0)), &self.filter) {
+            Ok(true) => match self.reader.read(&self.filter) {
+                Ok(event) => Poll::Ready(Some(Ok(event))),
                 Err(err) => Poll::Ready(Some(Err(err))),
-                _ => unreachable!(),
             },
             Ok(false) => {
                 if !self

@@ -3,8 +3,8 @@ use std::{collections::VecDeque, num::NonZeroU32, str};
 use crate::{
     escape::csi::{self, Csi, KittyKeyboardFlags, ThemeMode},
     event::{
-        InternalEvent, KeyCode, KeyEvent, KeyEventKind, KeyEventState, MediaKeyCode,
-        ModifierKeyCode, Modifiers, MouseButton, MouseEvent, MouseEventKind,
+        KeyCode, KeyEvent, KeyEventKind, KeyEventState, MediaKeyCode, ModifierKeyCode, Modifiers,
+        MouseButton, MouseEvent, MouseEventKind,
     },
     Event,
 };
@@ -13,7 +13,7 @@ use crate::{
 pub(crate) struct Parser {
     buffer: Vec<u8>,
     /// Events which have been parsed. Pop out with `Self::pop`.
-    events: VecDeque<InternalEvent>,
+    events: VecDeque<Event>,
 }
 
 impl Default for Parser {
@@ -27,7 +27,7 @@ impl Default for Parser {
 
 impl Parser {
     /// Reads and removes a parsed event from the parser.
-    pub fn pop(&mut self) -> Option<InternalEvent> {
+    pub fn pop(&mut self) -> Option<Event> {
         self.events.pop_front()
     }
 
@@ -90,13 +90,12 @@ mod windows {
                     }
                     Console::WINDOW_BUFFER_SIZE_EVENT => {
                         let record = unsafe { record.Event.WindowBufferSizeEvent };
-                        self.events
-                            .push_back(InternalEvent::Event(crate::Event::WindowResized {
-                                // Windows sizes are zero-indexed, Unix are 1-indexed. Normalize
-                                // to Unix:
-                                rows: (record.dwSize.Y + 1) as u16,
-                                cols: (record.dwSize.X + 1) as u16,
-                            }));
+                        self.events.push_back(Event::WindowResized {
+                            // Windows sizes are zero-indexed, Unix are 1-indexed. Normalize
+                            // to Unix:
+                            rows: (record.dwSize.Y + 1) as u16,
+                            cols: (record.dwSize.X + 1) as u16,
+                        });
                     }
                     _ => (),
                 }
@@ -124,7 +123,7 @@ macro_rules! bail {
     };
 }
 
-fn parse_event(buffer: &[u8], maybe_more: bool) -> Result<Option<InternalEvent>> {
+fn parse_event(buffer: &[u8], maybe_more: bool) -> Result<Option<Event>> {
     if buffer.is_empty() {
         return Ok(None);
     }
@@ -136,9 +135,7 @@ fn parse_event(buffer: &[u8], maybe_more: bool) -> Result<Option<InternalEvent>>
                     // Possible Esc sequence
                     Ok(None)
                 } else {
-                    Ok(Some(InternalEvent::Event(Event::Key(
-                        KeyCode::Escape.into(),
-                    ))))
+                    Ok(Some(Event::Key(KeyCode::Escape.into())))
                 }
             } else {
                 match buffer[1] {
@@ -147,42 +144,28 @@ fn parse_event(buffer: &[u8], maybe_more: bool) -> Result<Option<InternalEvent>>
                             Ok(None)
                         } else {
                             match buffer[2] {
-                                b'D' => {
-                                    Ok(Some(InternalEvent::Event(Event::Key(KeyCode::Left.into()))))
-                                }
-                                b'C' => Ok(Some(InternalEvent::Event(Event::Key(
-                                    KeyCode::Right.into(),
-                                )))),
-                                b'A' => {
-                                    Ok(Some(InternalEvent::Event(Event::Key(KeyCode::Up.into()))))
-                                }
-                                b'B' => {
-                                    Ok(Some(InternalEvent::Event(Event::Key(KeyCode::Down.into()))))
-                                }
-                                b'H' => {
-                                    Ok(Some(InternalEvent::Event(Event::Key(KeyCode::Home.into()))))
-                                }
-                                b'F' => {
-                                    Ok(Some(InternalEvent::Event(Event::Key(KeyCode::End.into()))))
-                                }
+                                b'D' => Ok(Some(Event::Key(KeyCode::Left.into()))),
+                                b'C' => Ok(Some(Event::Key(KeyCode::Right.into()))),
+                                b'A' => Ok(Some(Event::Key(KeyCode::Up.into()))),
+                                b'B' => Ok(Some(Event::Key(KeyCode::Down.into()))),
+                                b'H' => Ok(Some(Event::Key(KeyCode::Home.into()))),
+                                b'F' => Ok(Some(Event::Key(KeyCode::End.into()))),
                                 // F1-F4
-                                val @ b'P'..=b'S' => Ok(Some(InternalEvent::Event(Event::Key(
-                                    KeyCode::Function(1 + val - b'P').into(),
-                                )))),
+                                val @ b'P'..=b'S' => {
+                                    Ok(Some(Event::Key(KeyCode::Function(1 + val - b'P').into())))
+                                }
                                 _ => bail!(),
                             }
                         }
                     }
                     b'[' => parse_csi(buffer),
-                    b'\x1B' => Ok(Some(InternalEvent::Event(Event::Key(
-                        KeyCode::Escape.into(),
-                    )))),
+                    b'\x1B' => Ok(Some(Event::Key(KeyCode::Escape.into()))),
                     _ => parse_event(&buffer[1..], maybe_more).map(|event_option| {
                         event_option.map(|event| {
-                            if let InternalEvent::Event(Event::Key(key_event)) = event {
+                            if let Event::Key(key_event) = event {
                                 let mut alt_key_event = key_event;
                                 alt_key_event.modifiers |= Modifiers::ALT;
-                                InternalEvent::Event(Event::Key(alt_key_event))
+                                Event::Key(alt_key_event)
                             } else {
                                 event
                             }
@@ -191,25 +174,21 @@ fn parse_event(buffer: &[u8], maybe_more: bool) -> Result<Option<InternalEvent>>
                 }
             }
         }
-        b'\r' => Ok(Some(InternalEvent::Event(Event::Key(
-            KeyCode::Enter.into(),
-        )))),
-        b'\t' => Ok(Some(InternalEvent::Event(Event::Key(KeyCode::Tab.into())))),
-        b'\x7F' => Ok(Some(InternalEvent::Event(Event::Key(
-            KeyCode::Backspace.into(),
-        )))),
-        b'\0' => Ok(Some(InternalEvent::Event(Event::Key(KeyEvent::new(
+        b'\r' => Ok(Some(Event::Key(KeyCode::Enter.into()))),
+        b'\t' => Ok(Some(Event::Key(KeyCode::Tab.into()))),
+        b'\x7F' => Ok(Some(Event::Key(KeyCode::Backspace.into()))),
+        b'\0' => Ok(Some(Event::Key(KeyEvent::new(
             KeyCode::Char(' '),
             Modifiers::CONTROL,
-        ))))),
-        c @ b'\x01'..=b'\x1A' => Ok(Some(InternalEvent::Event(Event::Key(KeyEvent::new(
+        )))),
+        c @ b'\x01'..=b'\x1A' => Ok(Some(Event::Key(KeyEvent::new(
             KeyCode::Char((c - 0x1 + b'a') as char),
             Modifiers::CONTROL,
-        ))))),
-        c @ b'\x1C'..=b'\x1F' => Ok(Some(InternalEvent::Event(Event::Key(KeyEvent::new(
+        )))),
+        c @ b'\x1C'..=b'\x1F' => Ok(Some(Event::Key(KeyEvent::new(
             KeyCode::Char((c - 0x1C + b'4') as char),
             Modifiers::CONTROL,
-        ))))),
+        )))),
         _ => parse_utf8_char(buffer).map(|maybe_char| {
             maybe_char.map(|ch| {
                 let modifiers = if ch.is_uppercase() {
@@ -217,7 +196,7 @@ fn parse_event(buffer: &[u8], maybe_more: bool) -> Result<Option<InternalEvent>>
                 } else {
                     Modifiers::NONE
                 };
-                InternalEvent::Event(Event::Key(KeyEvent::new(KeyCode::Char(ch), modifiers)))
+                Event::Key(KeyEvent::new(KeyCode::Char(ch), modifiers))
             })
         }),
     }
@@ -254,7 +233,7 @@ fn parse_utf8_char(buffer: &[u8]) -> Result<Option<char>> {
     }
 }
 
-fn parse_csi(buffer: &[u8]) -> Result<Option<InternalEvent>> {
+fn parse_csi(buffer: &[u8]) -> Result<Option<Event>> {
     assert!(buffer.starts_with(b"\x1B["));
     if buffer.len() == 2 {
         return Ok(None);
@@ -322,7 +301,7 @@ fn parse_csi(buffer: &[u8]) -> Result<Option<InternalEvent>> {
         }
         _ => bail!(),
     };
-    Ok(maybe_event.map(InternalEvent::Event))
+    Ok(maybe_event)
 }
 
 fn next_parsed<T>(iter: &mut dyn Iterator<Item = &str>) -> Result<T>
@@ -347,7 +326,7 @@ fn modifier_and_kind_parsed(iter: &mut dyn Iterator<Item = &str>) -> Result<(u8,
     }
 }
 
-fn parse_csi_u_encoded_key_code(buffer: &[u8]) -> Result<Option<InternalEvent>> {
+fn parse_csi_u_encoded_key_code(buffer: &[u8]) -> Result<Option<Event>> {
     assert!(buffer.starts_with(b"\x1B")); // CSI
     assert!(buffer.ends_with(b"u"));
 
@@ -457,14 +436,14 @@ fn parse_csi_u_encoded_key_code(buffer: &[u8]) -> Result<Option<InternalEvent>> 
         }
     }
 
-    let input_event = Event::Key(KeyEvent {
+    let event = Event::Key(KeyEvent {
         code,
         modifiers,
         kind,
         state: state_from_keycode | state_from_modifiers,
     });
 
-    Ok(Some(InternalEvent::Event(input_event)))
+    Ok(Some(event))
 }
 
 fn parse_modifiers(mask: u8) -> Modifiers {
@@ -512,7 +491,7 @@ fn parse_key_event_kind(kind: u8) -> KeyEventKind {
     }
 }
 
-fn parse_csi_modifier_key_code(buffer: &[u8]) -> Result<Option<InternalEvent>> {
+fn parse_csi_modifier_key_code(buffer: &[u8]) -> Result<Option<Event>> {
     assert!(buffer.starts_with(b"\x1B[")); // CSI
     let s = str::from_utf8(&buffer[2..buffer.len() - 1])?;
     let mut split = s.split(';');
@@ -553,17 +532,17 @@ fn parse_csi_modifier_key_code(buffer: &[u8]) -> Result<Option<InternalEvent>> {
         _ => bail!(),
     };
 
-    let input_event = Event::Key(KeyEvent {
+    let event = Event::Key(KeyEvent {
         code,
         modifiers,
         kind,
         state: KeyEventState::NONE,
     });
 
-    Ok(Some(InternalEvent::Event(input_event)))
+    Ok(Some(event))
 }
 
-fn parse_csi_special_key_code(buffer: &[u8]) -> Result<Option<InternalEvent>> {
+fn parse_csi_special_key_code(buffer: &[u8]) -> Result<Option<Event>> {
     assert!(buffer.starts_with(b"\x1B[")); // CSI
     assert!(buffer.ends_with(b"~"));
 
@@ -599,14 +578,14 @@ fn parse_csi_special_key_code(buffer: &[u8]) -> Result<Option<InternalEvent>> {
         _ => bail!(),
     };
 
-    let input_event = Event::Key(KeyEvent {
+    let event = Event::Key(KeyEvent {
         code,
         modifiers,
         kind,
         state,
     });
 
-    Ok(Some(InternalEvent::Event(input_event)))
+    Ok(Some(event))
 }
 
 fn translate_functional_key_code(codepoint: u32) -> Option<(KeyCode, KeyEventState)> {
@@ -710,7 +689,7 @@ fn translate_functional_key_code(codepoint: u32) -> Option<(KeyCode, KeyEventSta
     None
 }
 
-fn parse_csi_rxvt_mouse(buffer: &[u8]) -> Result<Option<InternalEvent>> {
+fn parse_csi_rxvt_mouse(buffer: &[u8]) -> Result<Option<Event>> {
     // rxvt mouse encoding:
     // CSI Cb ; Cx ; Cy ; M
 
@@ -728,15 +707,15 @@ fn parse_csi_rxvt_mouse(buffer: &[u8]) -> Result<Option<InternalEvent>> {
     let cx = next_parsed::<u16>(&mut split)? - 1;
     let cy = next_parsed::<u16>(&mut split)? - 1;
 
-    Ok(Some(InternalEvent::Event(Event::Mouse(MouseEvent {
+    Ok(Some(Event::Mouse(MouseEvent {
         kind,
         column: cx,
         row: cy,
         modifiers,
-    }))))
+    })))
 }
 
-fn parse_csi_normal_mouse(buffer: &[u8]) -> Result<Option<InternalEvent>> {
+fn parse_csi_normal_mouse(buffer: &[u8]) -> Result<Option<Event>> {
     // Normal mouse encoding: CSI M CB Cx Cy (6 characters only).
 
     assert!(buffer.starts_with(b"\x1B[M")); // CSI M
@@ -754,15 +733,15 @@ fn parse_csi_normal_mouse(buffer: &[u8]) -> Result<Option<InternalEvent>> {
     let cx = u16::from(buffer[4].saturating_sub(32)) - 1;
     let cy = u16::from(buffer[5].saturating_sub(32)) - 1;
 
-    Ok(Some(InternalEvent::Event(Event::Mouse(MouseEvent {
+    Ok(Some(Event::Mouse(MouseEvent {
         kind,
         column: cx,
         row: cy,
         modifiers,
-    }))))
+    })))
 }
 
-fn parse_csi_sgr_mouse(buffer: &[u8]) -> Result<Option<InternalEvent>> {
+fn parse_csi_sgr_mouse(buffer: &[u8]) -> Result<Option<Event>> {
     // CSI < Cb ; Cx ; Cy (;) (M or m)
 
     assert!(buffer.starts_with(b"\x1B[<")); // CSI <
@@ -798,12 +777,12 @@ fn parse_csi_sgr_mouse(buffer: &[u8]) -> Result<Option<InternalEvent>> {
         kind
     };
 
-    Ok(Some(InternalEvent::Event(Event::Mouse(MouseEvent {
+    Ok(Some(Event::Mouse(MouseEvent {
         kind,
         column: cx,
         row: cy,
         modifiers,
-    }))))
+    })))
 }
 
 /// Cb is the byte of a mouse input that contains the button being used, the key modifiers being
@@ -855,7 +834,7 @@ fn parse_cb(cb: u8) -> Result<(MouseEventKind, Modifiers)> {
     Ok((kind, modifiers))
 }
 
-fn parse_csi_bracketed_paste(buffer: &[u8]) -> Result<Option<InternalEvent>> {
+fn parse_csi_bracketed_paste(buffer: &[u8]) -> Result<Option<Event>> {
     // CSI 2 0 0 ~ pasted text CSI 2 0 1 ~
     assert!(buffer.starts_with(b"\x1B[200~"));
 
@@ -863,11 +842,11 @@ fn parse_csi_bracketed_paste(buffer: &[u8]) -> Result<Option<InternalEvent>> {
         Ok(None)
     } else {
         let paste = String::from_utf8_lossy(&buffer[6..buffer.len() - 6]).to_string();
-        Ok(Some(InternalEvent::Event(Event::Paste(paste))))
+        Ok(Some(Event::Paste(paste)))
     }
 }
 
-fn parse_csi_cursor_position(buffer: &[u8]) -> Result<Option<InternalEvent>> {
+fn parse_csi_cursor_position(buffer: &[u8]) -> Result<Option<Event>> {
     // CSI Cy ; Cx R
     //   Cy - cursor row number (starting from 1)
     //   Cx - cursor column number (starting from 1)
@@ -881,12 +860,12 @@ fn parse_csi_cursor_position(buffer: &[u8]) -> Result<Option<InternalEvent>> {
     let line = next_parsed::<NonZeroU32>(&mut split)?.into();
     let col = next_parsed::<NonZeroU32>(&mut split)?.into();
 
-    Ok(Some(InternalEvent::Csi(Csi::Cursor(
+    Ok(Some(Event::Csi(Csi::Cursor(
         csi::Cursor::ActivePositionReport { line, col },
     ))))
 }
 
-fn parse_csi_keyboard_enhancement_flags(buffer: &[u8]) -> Result<Option<InternalEvent>> {
+fn parse_csi_keyboard_enhancement_flags(buffer: &[u8]) -> Result<Option<Event>> {
     // CSI ? flags u
     assert!(buffer.starts_with(b"\x1B[?")); // ESC [ ?
     assert!(buffer.ends_with(b"u"));
@@ -915,12 +894,12 @@ fn parse_csi_keyboard_enhancement_flags(buffer: &[u8]) -> Result<Option<Internal
     //     flags |= KeyboardEnhancementFlags::REPORT_ASSOCIATED_TEXT;
     // }
 
-    Ok(Some(InternalEvent::Csi(Csi::Keyboard(
-        csi::Keyboard::ReportFlags(flags),
-    ))))
+    Ok(Some(Event::Csi(Csi::Keyboard(csi::Keyboard::ReportFlags(
+        flags,
+    )))))
 }
 
-fn parse_csi_primary_device_attributes(buffer: &[u8]) -> Result<Option<InternalEvent>> {
+fn parse_csi_primary_device_attributes(buffer: &[u8]) -> Result<Option<Event>> {
     // CSI 64 ; attr1 ; attr2 ; ... ; attrn ; c
     assert!(buffer.starts_with(b"\x1B[?"));
     assert!(buffer.ends_with(b"c"));
@@ -929,12 +908,12 @@ fn parse_csi_primary_device_attributes(buffer: &[u8]) -> Result<Option<InternalE
     // exposed in the crossterm API so we don't need to parse the individual attributes yet.
     // See <https://vt100.net/docs/vt510-rm/DA1.html>
 
-    Ok(Some(InternalEvent::Csi(Csi::Device(
+    Ok(Some(Event::Csi(Csi::Device(
         csi::Device::DeviceAttributes(()),
     ))))
 }
 
-fn parse_csi_theme_mode(buffer: &[u8]) -> Result<Option<InternalEvent>> {
+fn parse_csi_theme_mode(buffer: &[u8]) -> Result<Option<Event>> {
     // dark mode:  CSI ? 997 ; 1 n
     // light mode: CSI ? 997 ; 2 n
     assert!(buffer.starts_with(b"\x1B[?"));
@@ -954,12 +933,10 @@ fn parse_csi_theme_mode(buffer: &[u8]) -> Result<Option<InternalEvent>> {
         _ => bail!(),
     };
 
-    Ok(Some(InternalEvent::Csi(Csi::Theme(csi::Theme::Report(
-        theme_mode,
-    )))))
+    Ok(Some(Event::Csi(Csi::Theme(csi::Theme::Report(theme_mode)))))
 }
 
-fn parse_csi_synchronized_output_mode(buffer: &[u8]) -> Result<Option<InternalEvent>> {
+fn parse_csi_synchronized_output_mode(buffer: &[u8]) -> Result<Option<Event>> {
     // CSI ? 2026 ; 0 $ y
     assert!(buffer.starts_with(b"\x1B[?"));
     assert!(buffer.ends_with(b"y"));
@@ -986,7 +963,7 @@ fn parse_csi_synchronized_output_mode(buffer: &[u8]) -> Result<Option<InternalEv
         _ => bail!(),
     };
 
-    Ok(Some(InternalEvent::Csi(Csi::Mode(
+    Ok(Some(Event::Csi(Csi::Mode(
         csi::Mode::ReportDecPrivateMode {
             mode: csi::DecPrivateMode::Code(mode),
             setting,

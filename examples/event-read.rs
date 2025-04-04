@@ -55,7 +55,7 @@ fn main() -> io::Result<()> {
 
     let mut size = terminal.get_dimensions()?;
     loop {
-        let event = terminal.read()?;
+        let event = terminal.read(|event| !matches!(event, Event::Csi(_)))?;
 
         println!("Event: {event:?}\r");
 
@@ -105,8 +105,9 @@ fn main() -> io::Result<()> {
 
 fn flush_resize_events(terminal: &PlatformTerminal, original_size: (u16, u16)) -> (u16, u16) {
     let mut size = original_size;
-    while let Ok(true) = terminal.poll(Some(Duration::from_millis(50))) {
-        if let Ok(Event::WindowResized { rows, cols }) = terminal.read() {
+    let filter = |event: &Event| matches!(event, Event::WindowResized { .. });
+    while let Ok(true) = terminal.poll(filter, Some(Duration::from_millis(50))) {
+        if let Ok(Event::WindowResized { rows, cols }) = terminal.read(filter) {
             size = (rows, cols)
         }
     }

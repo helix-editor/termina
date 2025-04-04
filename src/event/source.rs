@@ -21,10 +21,7 @@ pub(crate) type PlatformWaker = UnixWaker;
 pub(crate) type PlatformWaker = WindowsWaker;
 
 pub(crate) trait EventSource: Send + Sync {
-    fn try_read(
-        &mut self,
-        timeout: Option<Duration>,
-    ) -> std::io::Result<Option<super::InternalEvent>>;
+    fn try_read(&mut self, timeout: Option<Duration>) -> std::io::Result<Option<crate::Event>>;
 
     fn waker(&self) -> PlatformWaker;
 }
