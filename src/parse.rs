@@ -307,9 +307,9 @@ fn parse_csi(buffer: &[u8]) -> Result<Option<InternalEvent>> {
                 if !(64..=126).contains(&last_byte) {
                     None
                 } else {
-                    // if buffer.starts_with(b"\x1B[200~") {
-                    //     return parse_csi_bracketed_paste(buffer);
-                    // }
+                    if buffer.starts_with(b"\x1B[200~") {
+                        return parse_csi_bracketed_paste(buffer);
+                    }
                     match last_byte {
                         // b'M' => return parse_csi_rxvt_mouse(buffer),
                         b'~' => return parse_csi_special_key_code(buffer),
@@ -801,4 +801,16 @@ fn parse_cb(cb: u8) -> Result<(MouseEventKind, Modifiers)> {
     }
 
     Ok((kind, modifiers))
+}
+
+fn parse_csi_bracketed_paste(buffer: &[u8]) -> Result<Option<InternalEvent>> {
+    // CSI 2 0 0 ~ pasted text CSI 2 0 1 ~
+    assert!(buffer.starts_with(b"\x1B[200~"));
+
+    if !buffer.ends_with(b"\x1b[201~") {
+        Ok(None)
+    } else {
+        let paste = String::from_utf8_lossy(&buffer[6..buffer.len() - 6]).to_string();
+        Ok(Some(InternalEvent::Event(Event::Paste(paste))))
+    }
 }
