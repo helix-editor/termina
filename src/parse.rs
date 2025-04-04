@@ -1,6 +1,7 @@
 use std::{collections::VecDeque, str};
 
 use crate::{
+    escape::csi::{self, Csi, KittyKeyboardFlags, ThemeMode},
     event::InternalEvent,
     input::{
         KeyCode, KeyEvent, KeyEventKind, KeyEventState, MediaKeyCode, ModifierKeyCode, Modifiers,
@@ -289,13 +290,13 @@ fn parse_csi(buffer: &[u8]) -> Result<Option<InternalEvent>> {
         b'P' => Some(Event::Key(KeyCode::Function(1).into())),
         b'Q' => Some(Event::Key(KeyCode::Function(2).into())),
         b'S' => Some(Event::Key(KeyCode::Function(4).into())),
-        // b'?' => match buffer[buffer.len() - 1] {
-        //     b'u' => return parse_csi_keyboard_enhancement_flags(buffer),
-        //     b'c' => return parse_csi_primary_device_attributes(buffer),
-        //     b'n' => return parse_csi_theme_mode(buffer),
-        //     b'y' => return parse_csi_synchronized_output_mode(buffer),
-        //     _ => None,
-        // },
+        b'?' => match buffer[buffer.len() - 1] {
+            b'u' => return parse_csi_keyboard_enhancement_flags(buffer),
+            b'c' => return parse_csi_primary_device_attributes(buffer),
+            b'n' => return parse_csi_theme_mode(buffer),
+            b'y' => return parse_csi_synchronized_output_mode(buffer),
+            _ => None,
+        },
         b'0'..=b'9' => {
             // Numbered escape code.
             if buffer.len() == 3 {
@@ -882,4 +883,112 @@ fn parse_csi_cursor_position(buffer: &[u8]) -> Result<Option<InternalEvent>> {
     let x = next_parsed::<u16>(&mut split)? - 1;
 
     Ok(Some(InternalEvent::CursorPosition(x, y)))
+}
+
+fn parse_csi_keyboard_enhancement_flags(buffer: &[u8]) -> Result<Option<InternalEvent>> {
+    // CSI ? flags u
+    assert!(buffer.starts_with(b"\x1B[?")); // ESC [ ?
+    assert!(buffer.ends_with(b"u"));
+
+    if buffer.len() < 5 {
+        return Ok(None);
+    }
+
+    let bits = buffer[3];
+    let mut flags = KittyKeyboardFlags::empty();
+
+    if bits & 1 != 0 {
+        flags |= KittyKeyboardFlags::DISAMBIGUATE_ESCAPE_CODES;
+    }
+    if bits & 2 != 0 {
+        flags |= KittyKeyboardFlags::REPORT_EVENT_TYPES;
+    }
+    if bits & 4 != 0 {
+        flags |= KittyKeyboardFlags::REPORT_ALTERNATE_KEYS;
+    }
+    if bits & 8 != 0 {
+        flags |= KittyKeyboardFlags::REPORT_ALL_KEYS_AS_ESCAPE_CODES;
+    }
+    // TODO: support this
+    // if bits & 16 != 0 {
+    //     flags |= KeyboardEnhancementFlags::REPORT_ASSOCIATED_TEXT;
+    // }
+
+    Ok(Some(InternalEvent::Csi(Csi::Keyboard(
+        csi::Keyboard::ReportFlags(flags),
+    ))))
+}
+
+fn parse_csi_primary_device_attributes(buffer: &[u8]) -> Result<Option<InternalEvent>> {
+    // CSI 64 ; attr1 ; attr2 ; ... ; attrn ; c
+    assert!(buffer.starts_with(b"\x1B[?"));
+    assert!(buffer.ends_with(b"c"));
+
+    // This is a stub for parsing the primary device attributes. This response is not
+    // exposed in the crossterm API so we don't need to parse the individual attributes yet.
+    // See <https://vt100.net/docs/vt510-rm/DA1.html>
+
+    Ok(Some(InternalEvent::Csi(Csi::Device(
+        csi::Device::DeviceAttributes(()),
+    ))))
+}
+
+fn parse_csi_theme_mode(buffer: &[u8]) -> Result<Option<InternalEvent>> {
+    // dark mode:  CSI ? 997 ; 1 n
+    // light mode: CSI ? 997 ; 2 n
+    assert!(buffer.starts_with(b"\x1B[?"));
+    assert!(buffer.ends_with(b"n"));
+
+    let s = str::from_utf8(&buffer[3..buffer.len() - 1])?;
+
+    let mut split = s.split(';');
+
+    if next_parsed::<u16>(&mut split)? != 997 {
+        bail!();
+    }
+
+    let theme_mode = match next_parsed::<u8>(&mut split)? {
+        1 => ThemeMode::Dark,
+        2 => ThemeMode::Light,
+        _ => bail!(),
+    };
+
+    Ok(Some(InternalEvent::Csi(Csi::Theme(csi::Theme::Report(
+        theme_mode,
+    )))))
+}
+
+fn parse_csi_synchronized_output_mode(buffer: &[u8]) -> Result<Option<InternalEvent>> {
+    // CSI ? 2026 ; 0 $ y
+    assert!(buffer.starts_with(b"\x1B[?"));
+    assert!(buffer.ends_with(b"y"));
+
+    let s = str::from_utf8(&buffer[3..buffer.len() - 1])?;
+    let s = match s.strip_suffix('$') {
+        Some(s) => s,
+        None => bail!(),
+    };
+
+    let mut split = s.split(';');
+
+    let mode = csi::DecPrivateModeCode::SynchronizedOutput;
+    if next_parsed::<u16>(&mut split)? != mode as u16 {
+        bail!();
+    }
+
+    // For synchronized output specifically, 3 is undefined and 0 and 4 are treated as "not
+    // supported."
+    let setting = match next_parsed::<u8>(&mut split)? {
+        0 | 4 => csi::DecModeSetting::NotRecognized,
+        1 => csi::DecModeSetting::Set,
+        2 => csi::DecModeSetting::Reset,
+        _ => bail!(),
+    };
+
+    Ok(Some(InternalEvent::Csi(Csi::Mode(
+        csi::Mode::ReportDecPrivateMode {
+            mode: csi::DecPrivateMode::Code(mode),
+            setting,
+        },
+    ))))
 }

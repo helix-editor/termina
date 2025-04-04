@@ -22,7 +22,8 @@ pub enum Csi {
     Mode(Mode),
     Mouse(MouseReport),
     Keyboard(Keyboard),
-    // TODO...
+    Device(Device),
+    Theme(Theme),
 }
 
 impl Display for Csi {
@@ -34,6 +35,8 @@ impl Display for Csi {
             Self::Mode(mode) => mode.fmt(f),
             Self::Mouse(report) => report.fmt(f),
             Self::Keyboard(keyboard) => keyboard.fmt(f),
+            Self::Device(device) => device.fmt(f),
+            Self::Theme(theme) => theme.fmt(f),
         }
     }
 }
@@ -171,7 +174,13 @@ pub enum Mode {
     ResetDecPrivateMode(DecPrivateMode),
     SaveDecPrivateMode(DecPrivateMode),
     RestoreDecPrivateMode(DecPrivateMode),
+    // <https://vt100.net/docs/vt510-rm/DECRQM.html>
     QueryDecPrivateMode(DecPrivateMode),
+    // <https://vt100.net/docs/vt510-rm/DECRPM.html>
+    ReportDecPrivateMode {
+        mode: DecPrivateMode,
+        setting: DecModeSetting,
+    },
     SetMode(TerminalMode),
     ResetMode(TerminalMode),
     QueryMode(TerminalMode),
@@ -189,6 +198,9 @@ impl Display for Mode {
             Self::SaveDecPrivateMode(mode) => write!(f, "?{mode}s"),
             Self::RestoreDecPrivateMode(mode) => write!(f, "?{mode}r"),
             Self::QueryDecPrivateMode(mode) => write!(f, "?{mode}$p"),
+            Self::ReportDecPrivateMode { mode, setting } => {
+                write!(f, "?{mode};{}$y", *setting as u8)
+            }
             Self::SetMode(mode) => write!(f, "{mode}h"),
             Self::ResetMode(mode) => write!(f, "{mode}l"),
             Self::QueryMode(mode) => write!(f, "?{mode}$p"),
@@ -297,6 +309,9 @@ pub enum DecPrivateModeCode {
     /// Grapheme clustering mode
     GraphemeClustering = 2027,
 
+    /// <https://github.com/contour-terminal/contour/blob/master/docs/vt-extensions/color-palette-update-notifications.md>
+    Theme = 2031,
+
     /// Applies to sixel and regis modes
     UsePrivateColorRegistersForEachGraphic = 1070,
 
@@ -352,6 +367,15 @@ pub enum XtermKeyModifierResource {
     CursorKeys = 1,
     FunctionKeys = 2,
     OtherKeys = 4,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum DecModeSetting {
+    NotRecognized = 0,
+    Set = 1,
+    Reset = 2,
+    PermanentlySet = 3,
+    PermanentlyReset = 4,
 }
 
 // Mouse
@@ -522,6 +546,8 @@ impl Display for KittyKeyboardFlags {
 pub enum Keyboard {
     /// Query the current values of the flags.
     QueryFlags,
+    /// A report from the terminal declaring which flags are currently set.
+    ReportFlags(KittyKeyboardFlags),
     /// Pushes the given flags onto the terminal's stack.
     PushFlags(KittyKeyboardFlags),
     /// Pops the given number of stack entries from the terminal's stack.
@@ -543,6 +569,8 @@ impl Display for Keyboard {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             Self::QueryFlags => write!(f, "?u"),
+            // NOTE: this is sent by the terminal, not meant to be sent by the application.
+            Self::ReportFlags(flags) => write!(f, "?{flags}u"),
             Self::PushFlags(flags) => write!(f, ">{flags}u"),
             Self::PopFlags(number) => write!(f, "<{number}u"),
             Self::SetFlags { flags, mode } => write!(f, "={flags};{mode}u"),
@@ -564,6 +592,57 @@ pub enum SetKeyboardFlagsMode {
 impl Display for SetKeyboardFlagsMode {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(f, "{}", *self as u8)
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Device {
+    DeviceAttributes(()),
+    /// DECSTR - https://vt100.net/docs/vt510-rm/DECSTR.html
+    SoftReset,
+    RequestPrimaryDeviceAttributes,
+    RequestSecondaryDeviceAttributes,
+    RequestTertiaryDeviceAttributes,
+    StatusReport,
+    /// https://github.com/mintty/mintty/issues/881
+    /// https://gitlab.gnome.org/GNOME/vte/-/issues/235
+    RequestTerminalNameAndVersion,
+    RequestTerminalParameters(i64),
+}
+
+impl Display for Device {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::DeviceAttributes(_) => unimplemented!(),
+            Self::SoftReset => write!(f, "!p"),
+            Self::RequestPrimaryDeviceAttributes => write!(f, "c"),
+            Self::RequestSecondaryDeviceAttributes => write!(f, ">c"),
+            Self::RequestTertiaryDeviceAttributes => write!(f, "=c"),
+            Self::StatusReport => write!(f, "5n"),
+            Self::RequestTerminalNameAndVersion => write!(f, ">q"),
+            Self::RequestTerminalParameters(n) => write!(f, "{};1;1;128;128;1;0x", n + 2),
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Theme {
+    Query,
+    Report(ThemeMode),
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ThemeMode {
+    Dark = 1,
+    Light = 2,
+}
+
+impl Display for Theme {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::Query => write!(f, "?996n"),
+            Self::Report(mode) => write!(f, "?997;{}n", *mode as u8),
+        }
     }
 }
 

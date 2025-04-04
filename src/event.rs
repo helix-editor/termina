@@ -1,4 +1,7 @@
-use crate::input::{KeyEvent, MouseEvent};
+use crate::{
+    escape::csi::Csi,
+    input::{KeyEvent, MouseEvent},
+};
 
 pub(crate) mod reader;
 pub(crate) mod source;
@@ -24,8 +27,9 @@ pub enum Event {
     Paste(String),
 }
 
-#[derive(Debug, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) enum InternalEvent {
     Event(Event),
     CursorPosition(u16, u16),
+    Csi(Csi),
 }
