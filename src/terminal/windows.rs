@@ -380,7 +380,7 @@ impl Terminal for WindowsTerminal {
             .read(|event| matches!(event, InternalEvent::Event(_)))
             .map(|event| match event {
                 InternalEvent::Event(event) => event,
-                // _ => unreachable!()
+                _ => unreachable!(),
             })
     }
 }

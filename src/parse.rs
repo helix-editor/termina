@@ -314,7 +314,7 @@ fn parse_csi(buffer: &[u8]) -> Result<Option<InternalEvent>> {
                         b'M' => return parse_csi_rxvt_mouse(buffer),
                         b'~' => return parse_csi_special_key_code(buffer),
                         b'u' => return parse_csi_u_encoded_key_code(buffer),
-                        // b'R' => return parse_csi_cursor_position(buffer),
+                        b'R' => return parse_csi_cursor_position(buffer),
                         _ => return parse_csi_modifier_key_code(buffer),
                     }
                 }
@@ -865,4 +865,21 @@ fn parse_csi_bracketed_paste(buffer: &[u8]) -> Result<Option<InternalEvent>> {
         let paste = String::from_utf8_lossy(&buffer[6..buffer.len() - 6]).to_string();
         Ok(Some(InternalEvent::Event(Event::Paste(paste))))
     }
+}
+
+fn parse_csi_cursor_position(buffer: &[u8]) -> Result<Option<InternalEvent>> {
+    // CSI Cy ; Cx R
+    //   Cy - cursor row number (starting from 1)
+    //   Cx - cursor column number (starting from 1)
+    assert!(buffer.starts_with(b"\x1B[")); // CSI
+    assert!(buffer.ends_with(b"R"));
+
+    let s = str::from_utf8(&buffer[2..buffer.len() - 1])?;
+
+    let mut split = s.split(';');
+
+    let y = next_parsed::<u16>(&mut split)? - 1;
+    let x = next_parsed::<u16>(&mut split)? - 1;
+
+    Ok(Some(InternalEvent::CursorPosition(x, y)))
 }

@@ -27,4 +27,5 @@ pub enum Event {
 #[derive(Debug, PartialEq, Eq)]
 pub(crate) enum InternalEvent {
     Event(Event),
+    CursorPosition(u16, u16),
 }

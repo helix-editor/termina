@@ -85,7 +85,7 @@ impl Stream for EventStream {
             Ok(true) => match self.reader.read(filter) {
                 Ok(InternalEvent::Event(event)) => Poll::Ready(Some(Ok(event))),
                 Err(err) => Poll::Ready(Some(Err(err))),
-                // _ => unreachable!(),
+                _ => unreachable!(),
             },
             Ok(false) => {
                 if !self
