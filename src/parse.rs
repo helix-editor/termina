@@ -41,43 +41,29 @@ mod windows {
     use super::*;
 
     impl Parser {
-        pub fn decode_input_records<F: FnMut(InternalEvent)>(
-            &mut self,
-            records: &[Console::INPUT_RECORD],
-            mut callback: F,
-        ) {
+        pub fn decode_input_records(&mut self, records: &[Console::INPUT_RECORD]) {
             for record in records {
                 match record.EventType as u32 {
-                    Console::KEY_EVENT => {
-                        self.decode_key_record(unsafe { record.Event.KeyEvent }, &mut callback)
+                    Console::KEY_EVENT => self.decode_key_record(unsafe { record.Event.KeyEvent }),
+                    Console::WINDOW_BUFFER_SIZE_EVENT => {
+                        self.decode_resize_record(unsafe { record.Event.WindowBufferSizeEvent })
                     }
-                    Console::WINDOW_BUFFER_SIZE_EVENT => self.decode_resize_record(
-                        unsafe { record.Event.WindowBufferSizeEvent },
-                        &mut callback,
-                    ),
                     _ => (),
                 }
             }
-            self.process_bytes(callback, false);
+            self.process_bytes(false);
         }
 
-        fn decode_resize_record<F: FnMut(InternalEvent)>(
-            &mut self,
-            record: Console::WINDOW_BUFFER_SIZE_RECORD,
-            mut callback: F,
-        ) {
-            callback(InternalEvent::Event(crate::Event::WindowResized {
-                // Windows sizes are zero-indexed, Unix are 1-indexed. Normalize to Unix:
-                rows: (record.dwSize.Y + 1) as u16,
-                cols: (record.dwSize.X + 1) as u16,
-            }));
+        fn decode_resize_record(&mut self, record: Console::WINDOW_BUFFER_SIZE_RECORD) {
+            self.events
+                .push_back(InternalEvent::Event(crate::Event::WindowResized {
+                    // Windows sizes are zero-indexed, Unix are 1-indexed. Normalize to Unix:
+                    rows: (record.dwSize.Y + 1) as u16,
+                    cols: (record.dwSize.X + 1) as u16,
+                }));
         }
 
-        fn decode_key_record<F: FnMut(InternalEvent)>(
-            &mut self,
-            record: Console::KEY_EVENT_RECORD,
-            callback: F,
-        ) {
+        fn decode_key_record(&mut self, record: Console::KEY_EVENT_RECORD) {
             // This skips 'up's. IIRC Termwiz skips 'down's and Crossterm skips 'up's.
             if record.bKeyDown != 0 {
                 return;
@@ -87,9 +73,7 @@ mod windows {
             match std::char::from_u32(unsafe { record.uChar.UnicodeChar } as u32) {
                 Some(unicode) if unicode != '\0' => {
                     let mut buf = [0u8; 4];
-                    self.buffer
-                        .extend_from_slice(unicode.encode_utf8(&mut buf).as_bytes());
-                    self.process_bytes(callback, true);
+                    self.parse(unicode.encode_utf8(&mut buf).as_bytes(), true);
                 }
                 _ => (),
             }

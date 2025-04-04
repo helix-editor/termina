@@ -1,4 +1,4 @@
-use std::{collections::VecDeque, io, os::windows::prelude::*, ptr, sync::Arc, time::Duration};
+use std::{io, os::windows::prelude::*, ptr, sync::Arc, time::Duration};
 
 use windows_sys::Win32::System::Threading;
 
@@ -10,7 +10,6 @@ use super::{EventSource, PollTimeout};
 pub struct WindowsEventSource {
     input: InputHandle,
     parser: Parser,
-    events: VecDeque<InternalEvent>,
     waker: Arc<EventHandle>,
 }
 
@@ -19,7 +18,6 @@ impl WindowsEventSource {
         Ok(Self {
             input,
             parser: Parser::default(),
-            events: VecDeque::with_capacity(32),
             waker: Arc::new(EventHandle::new()?),
         })
     }
@@ -39,7 +37,7 @@ impl EventSource for WindowsEventSource {
         let timeout = PollTimeout::new(timeout);
 
         while timeout.leftover().map_or(true, |t| !t.is_zero()) {
-            if let Some(event) = self.events.pop_front() {
+            if let Some(event) = self.parser.pop() {
                 return Ok(Some(event));
             }
 
@@ -77,12 +75,7 @@ impl EventSource for WindowsEventSource {
 
             let records = self.input.read_console_input(pending)?;
 
-            let events = &mut self.events;
-            self.parser
-                .decode_input_records(&records, |event| events.push_front(event));
-
-            // give the records to the parser and then continue with another loop.
-            todo!("handle the records");
+            self.parser.decode_input_records(&records);
         }
 
         Ok(None)

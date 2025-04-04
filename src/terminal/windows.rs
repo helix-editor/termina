@@ -19,7 +19,11 @@ use windows_sys::Win32::{
     },
 };
 
-use crate::{event::source::WindowsEventSource, EventStream};
+use crate::{
+    escape,
+    event::{reader::InternalEventReader, source::WindowsEventSource, InternalEvent},
+    EventStream,
+};
 
 use super::Terminal;
 
@@ -259,10 +263,12 @@ fn open_pty() -> io::Result<(InputHandle, OutputHandle)> {
 pub struct WindowsTerminal {
     input: InputHandle,
     output: BufWriter<OutputHandle>,
+    reader: InternalEventReader,
     original_input_mode: u32,
     original_output_mode: u32,
     original_input_cp: u32,
     original_output_cp: u32,
+    is_in_alternate_screen: bool,
 }
 
 impl WindowsTerminal {
@@ -289,13 +295,17 @@ impl WindowsTerminal {
             bail!("virtual terminal processing could not be enabled for the input handle");
         }
 
+        let reader = InternalEventReader::new(WindowsEventSource::new(input.try_clone()?)?);
+
         Ok(Self {
             input,
             output: BufWriter::with_capacity(BUF_SIZE, output),
+            reader,
             original_input_mode,
             original_output_mode,
             original_input_cp,
             original_output_cp,
+            is_in_alternate_screen: false,
         })
     }
 }
@@ -335,7 +345,6 @@ impl Terminal for WindowsTerminal {
                 | Console::ENABLE_MOUSE_INPUT
                 | Console::ENABLE_WINDOW_INPUT,
         )?;
-        // TODO: enabling of VT stuff: mouse, bracketed paste, etc...
 
         Ok(())
     }
@@ -358,11 +367,19 @@ impl Terminal for WindowsTerminal {
     }
 
     fn enter_alternate_screen(&mut self) -> io::Result<()> {
-        todo!()
+        if !self.is_in_alternate_screen {
+            write!(self.output, "{}", escape::csi::ENTER_ALTERNATE_SCREEN)?;
+            self.is_in_alternate_screen = true;
+        }
+        Ok(())
     }
 
     fn enter_main_screen(&mut self) -> io::Result<()> {
-        todo!()
+        if self.is_in_alternate_screen {
+            write!(self.output, "{}", escape::csi::EXIT_ALTERNATE_SCREEN)?;
+            self.is_in_alternate_screen = false;
+        }
+        Ok(())
     }
 
     fn get_dimensions(&mut self) -> io::Result<(u16, u16)> {
@@ -371,8 +388,31 @@ impl Terminal for WindowsTerminal {
         self.output.get_mut().get_dimensions()
     }
 
-    fn event_stream(&self) -> io::Result<EventStream> {
-        let source = WindowsEventSource::new(self.input.try_clone()?)?;
-        Ok(EventStream::new(source))
+    fn event_stream(&self) -> EventStream {
+        EventStream::new(self.reader.clone())
+    }
+
+    fn poll(&self, timeout: Option<std::time::Duration>) -> io::Result<bool> {
+        self.reader
+            .poll(timeout, |event| matches!(event, InternalEvent::Event(_)))
+    }
+
+    fn read(&self) -> io::Result<crate::Event> {
+        self.reader
+            .read(|event| matches!(event, InternalEvent::Event(_)))
+            .map(|event| match event {
+                InternalEvent::Event(event) => event,
+                // _ => unreachable!()
+            })
+    }
+}
+
+impl io::Write for WindowsTerminal {
+    fn write(&mut self, buf: &[u8]) -> io::Result<usize> {
+        self.output.write(buf)
+    }
+
+    fn flush(&mut self) -> io::Result<()> {
+        self.output.flush()
     }
 }
