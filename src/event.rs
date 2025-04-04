@@ -1,11 +1,19 @@
+use crate::input::KeyEvent;
+
 pub(crate) mod reader;
 pub(crate) mod source;
 pub(crate) mod stream;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Event {
+    Key(KeyEvent),
     /// The window was resized to the given dimensions.
-    WindowResized { rows: u16, cols: u16 },
+    WindowResized {
+        rows: u16,
+        cols: u16,
+    },
+    FocusIn,
+    FocusOut,
     /// A "bracketed" paste.
     ///
     /// Normally pasting into a terminal with Ctrl+v (or Super+v) enters the pasted text as if

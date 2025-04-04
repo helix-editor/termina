@@ -1,8 +1,13 @@
-use std::io::{self, Write as _};
+use std::{
+    io::{self, Write as _},
+    time::Duration,
+};
 
 use termina::{
     escape::csi::{self, KittyKeyboardFlags},
+    input::{KeyCode, KeyEvent},
     terminal::{PlatformTerminal, Terminal},
+    Event,
 };
 
 const HELP: &str = r#"Blocking read()
@@ -19,25 +24,60 @@ fn main() -> io::Result<()> {
 
     write!(
         terminal,
-        "{}",
+        "{}{}{}",
         csi::Csi::Keyboard(csi::Keyboard::PushFlags(
             KittyKeyboardFlags::DISAMBIGUATE_ESCAPE_CODES
                 | KittyKeyboardFlags::REPORT_ALTERNATE_KEYS
-        ))
+        )),
+        csi::Csi::Mode(csi::Mode::SetDecPrivateMode(csi::DecPrivateMode::Code(
+            csi::DecPrivateModeCode::FocusTracking
+        ))),
+        csi::Csi::Mode(csi::Mode::SetDecPrivateMode(csi::DecPrivateMode::Code(
+            csi::DecPrivateModeCode::BracketedPaste
+        ))),
     )?;
 
-    print_events(terminal)?;
+    let mut size = terminal.get_dimensions()?;
+    loop {
+        let event = terminal.read()?;
+
+        println!("Event: {event:?}\r");
+
+        match event {
+            Event::Key(KeyEvent {
+                code: KeyCode::Escape,
+                ..
+            }) => break,
+            Event::WindowResized { rows, cols } => {
+                let new_size = flush_resize_events(&terminal, (rows, cols));
+                println!("Resize from {size:?} to {new_size:?}\r");
+                size = new_size;
+            }
+            _ => (),
+        }
+    }
+
+    write!(
+        terminal,
+        "{}{}{}",
+        csi::Csi::Keyboard(csi::Keyboard::PopFlags(1)),
+        csi::Csi::Mode(csi::Mode::ResetDecPrivateMode(csi::DecPrivateMode::Code(
+            csi::DecPrivateModeCode::FocusTracking
+        ))),
+        csi::Csi::Mode(csi::Mode::ResetDecPrivateMode(csi::DecPrivateMode::Code(
+            csi::DecPrivateModeCode::BracketedPaste
+        ))),
+    )?;
 
     Ok(())
 }
 
-fn print_events(terminal: PlatformTerminal) -> io::Result<()> {
-    let mut i = 0;
-    while i < 2 {
-        let event = terminal.read()?;
-        i += 1;
-        println!("Event: {event:?}\r");
+fn flush_resize_events(terminal: &PlatformTerminal, original_size: (u16, u16)) -> (u16, u16) {
+    let mut size = original_size;
+    while let Ok(true) = terminal.poll(Some(Duration::from_millis(50))) {
+        if let Ok(Event::WindowResized { rows, cols }) = terminal.read() {
+            size = (rows, cols)
+        }
     }
-
-    Ok(())
+    size
 }

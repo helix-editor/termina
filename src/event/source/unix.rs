@@ -109,7 +109,7 @@ impl EventSource for UnixEventSource {
             // SIGWINCH received.
             if sigwinch_ready {
                 // Drain the pipe.
-                while read_complete(&self.wake_pipe, &mut [0; 1024])? != 0 {}
+                while read_complete(&self.sigwinch_pipe, &mut [0; 1024])? != 0 {}
 
                 let winsize = termios::tcgetwinsize(&self.write)?;
                 let event = Event::WindowResized {
