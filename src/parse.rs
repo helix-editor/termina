@@ -277,7 +277,7 @@ fn parse_csi(buffer: &[u8]) -> Result<Option<InternalEvent>> {
             kind: KeyEventKind::Press,
             state: KeyEventState::NONE,
         })),
-        b'M' => todo!("normal mouse"),
+        b'M' => return parse_csi_normal_mouse(buffer),
         b'<' => return parse_csi_sgr_mouse(buffer),
         b'I' => Some(Event::FocusIn),
         b'O' => Some(Event::FocusOut),
@@ -311,7 +311,7 @@ fn parse_csi(buffer: &[u8]) -> Result<Option<InternalEvent>> {
                         return parse_csi_bracketed_paste(buffer);
                     }
                     match last_byte {
-                        // b'M' => return parse_csi_rxvt_mouse(buffer),
+                        b'M' => return parse_csi_rxvt_mouse(buffer),
                         b'~' => return parse_csi_special_key_code(buffer),
                         b'u' => return parse_csi_u_encoded_key_code(buffer),
                         // b'R' => return parse_csi_cursor_position(buffer),
@@ -708,6 +708,58 @@ fn translate_functional_key_code(codepoint: u32) -> Option<(KeyCode, KeyEventSta
     }
 
     None
+}
+
+fn parse_csi_rxvt_mouse(buffer: &[u8]) -> Result<Option<InternalEvent>> {
+    // rxvt mouse encoding:
+    // CSI Cb ; Cx ; Cy ; M
+
+    assert!(buffer.starts_with(b"\x1B[")); // CSI
+    assert!(buffer.ends_with(b"M"));
+
+    let s = str::from_utf8(&buffer[2..buffer.len() - 1])?;
+    let mut split = s.split(';');
+
+    let cb = next_parsed::<u8>(&mut split)?
+        .checked_sub(32)
+        .ok_or(MalformedSequenceError)?;
+    let (kind, modifiers) = parse_cb(cb)?;
+
+    let cx = next_parsed::<u16>(&mut split)? - 1;
+    let cy = next_parsed::<u16>(&mut split)? - 1;
+
+    Ok(Some(InternalEvent::Event(Event::Mouse(MouseEvent {
+        kind,
+        column: cx,
+        row: cy,
+        modifiers,
+    }))))
+}
+
+fn parse_csi_normal_mouse(buffer: &[u8]) -> Result<Option<InternalEvent>> {
+    // Normal mouse encoding: CSI M CB Cx Cy (6 characters only).
+
+    assert!(buffer.starts_with(b"\x1B[M")); // CSI M
+
+    if buffer.len() < 6 {
+        return Ok(None);
+    }
+
+    let cb = buffer[3].checked_sub(32).ok_or(MalformedSequenceError)?;
+    let (kind, modifiers) = parse_cb(cb)?;
+
+    // See http://www.xfree86.org/current/ctlseqs.html#Mouse%20Tracking
+    // The upper left character position on the terminal is denoted as 1,1.
+    // Subtract 1 to keep it synced with cursor
+    let cx = u16::from(buffer[4].saturating_sub(32)) - 1;
+    let cy = u16::from(buffer[5].saturating_sub(32)) - 1;
+
+    Ok(Some(InternalEvent::Event(Event::Mouse(MouseEvent {
+        kind,
+        column: cx,
+        row: cy,
+        modifiers,
+    }))))
 }
 
 fn parse_csi_sgr_mouse(buffer: &[u8]) -> Result<Option<InternalEvent>> {
