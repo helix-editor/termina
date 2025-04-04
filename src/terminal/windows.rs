@@ -20,7 +20,6 @@ use windows_sys::Win32::{
 };
 
 use crate::{
-    escape,
     event::{reader::InternalEventReader, source::WindowsEventSource, InternalEvent},
     EventStream,
 };
@@ -268,7 +267,6 @@ pub struct WindowsTerminal {
     original_output_mode: u32,
     original_input_cp: u32,
     original_output_cp: u32,
-    is_in_alternate_screen: bool,
 }
 
 impl WindowsTerminal {
@@ -305,16 +303,12 @@ impl WindowsTerminal {
             original_output_mode,
             original_input_cp,
             original_output_cp,
-            is_in_alternate_screen: false,
         })
     }
 }
 
 impl Drop for WindowsTerminal {
     fn drop(&mut self) {
-        // TODO: regular VT exit stuff like the UnixTerminal: make the cursor visible, turn off
-        // bracketed paste, etc...
-        self.enter_main_screen().unwrap();
         self.output.flush().unwrap();
         self.input.set_mode(self.original_input_mode).unwrap();
         self.output
@@ -363,22 +357,6 @@ impl Terminal for WindowsTerminal {
                 | Console::ENABLE_LINE_INPUT
                 | Console::ENABLE_PROCESSED_INPUT,
         )?;
-        Ok(())
-    }
-
-    fn enter_alternate_screen(&mut self) -> io::Result<()> {
-        if !self.is_in_alternate_screen {
-            write!(self.output, "{}", escape::csi::ENTER_ALTERNATE_SCREEN)?;
-            self.is_in_alternate_screen = true;
-        }
-        Ok(())
-    }
-
-    fn enter_main_screen(&mut self) -> io::Result<()> {
-        if self.is_in_alternate_screen {
-            write!(self.output, "{}", escape::csi::EXIT_ALTERNATE_SCREEN)?;
-            self.is_in_alternate_screen = false;
-        }
         Ok(())
     }
 

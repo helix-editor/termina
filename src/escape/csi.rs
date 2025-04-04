@@ -5,13 +5,13 @@ use crate::{
     style::{Blink, ColorSpec, Font, Intensity, RgbaColor, Underline, VerticalAlign},
 };
 
-pub(crate) const ENTER_ALTERNATE_SCREEN: Csi = Csi::Mode(Mode::SetDecPrivateMode(
-    DecPrivateMode::Code(DecPrivateModeCode::ClearAndEnableAlternateScreen),
-));
+pub const ENTER_ALTERNATE_SCREEN: Csi = Csi::Mode(Mode::SetDecPrivateMode(DecPrivateMode::Code(
+    DecPrivateModeCode::ClearAndEnableAlternateScreen,
+)));
 
-pub(crate) const EXIT_ALTERNATE_SCREEN: Csi = Csi::Mode(Mode::ResetDecPrivateMode(
-    DecPrivateMode::Code(DecPrivateModeCode::ClearAndEnableAlternateScreen),
-));
+pub const EXIT_ALTERNATE_SCREEN: Csi = Csi::Mode(Mode::ResetDecPrivateMode(DecPrivateMode::Code(
+    DecPrivateModeCode::ClearAndEnableAlternateScreen,
+)));
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Csi {

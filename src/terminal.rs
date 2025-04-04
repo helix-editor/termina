@@ -36,18 +36,6 @@ pub trait Terminal: io::Write {
     /// While in "cooked" mode a terminal will interpret the incoming data in ways that are useful
     /// such as waiting for an Enter key press to pass input to the application.
     fn enter_cooked_mode(&mut self) -> io::Result<()>;
-    /// Enters a new "alternate screen."
-    ///
-    /// The "alternate" screen has the exact dimensions of the window and no scrollback region.
-    /// This is usually used to create a "full screen" application such as a text editor.
-    fn enter_alternate_screen(&mut self) -> io::Result<()>;
-    /// Exits the alternate screen entered with `Self::enter_alternate_screen`.
-    ///
-    /// If `Self::enter_alternate_screen` was not previously called this is a no-op. The "main"
-    /// screen is used by shells and other line-wise programs, typically in cooked mode. Alternate
-    /// screens are created fresh for each call to `Self::enter_alternate_screen` while the main
-    /// screen is shared.
-    fn enter_main_screen(&mut self) -> io::Result<()>;
     fn get_dimensions(&mut self) -> io::Result<(u16, u16)>;
     fn event_stream(&self) -> EventStream;
     /// Checks if there is an `Event` available.
