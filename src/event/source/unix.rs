@@ -180,7 +180,7 @@ fn poll(fds: [&dyn AsFd; 3], timeout: Option<Duration>) -> std::io::Result<[bool
     }
 
     #[cfg_attr(not(target_os = "macos"), allow(dead_code))]
-    fn select2(fds: [&dyn AsFd; 3], timeout: Option<&Timespec>) -> rustix::io::Result<[bool; 3]> {
+    fn select2(fds: [&dyn AsFd; 3], timeout: Option<&Timespec>) -> io::Result<[bool; 3]> {
         use rustix::event::{fd_set_insert, fd_set_num_elements, FdSetElement, FdSetIter};
         use std::os::fd::AsRawFd;
 
