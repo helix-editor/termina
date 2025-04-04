@@ -2,10 +2,9 @@ use std::{collections::VecDeque, str};
 
 use crate::{
     escape::csi::{self, Csi, KittyKeyboardFlags, ThemeMode},
-    event::InternalEvent,
-    input::{
-        KeyCode, KeyEvent, KeyEventKind, KeyEventState, MediaKeyCode, ModifierKeyCode, Modifiers,
-        MouseButton, MouseEvent, MouseEventKind,
+    event::{
+        InternalEvent, KeyCode, KeyEvent, KeyEventKind, KeyEventState, MediaKeyCode,
+        ModifierKeyCode, Modifiers, MouseButton, MouseEvent, MouseEventKind,
     },
     Event,
 };

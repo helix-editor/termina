@@ -1,7 +1,7 @@
 use std::fmt::{self, Display};
 
 use crate::{
-    input::Modifiers,
+    event::Modifiers,
     style::{Blink, ColorSpec, Font, Intensity, RgbaColor, Underline, VerticalAlign},
 };
 

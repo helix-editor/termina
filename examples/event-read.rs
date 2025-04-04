@@ -5,7 +5,7 @@ use std::{
 
 use termina::{
     escape::csi::{self, KittyKeyboardFlags},
-    input::{KeyCode, KeyEvent},
+    event::{KeyCode, KeyEvent},
     terminal::{PlatformTerminal, Terminal},
     Event,
 };
