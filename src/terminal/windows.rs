@@ -14,7 +14,7 @@ use windows_sys::Win32::{
     Storage::FileSystem::WriteFile,
     System::Console::{
         self, GetConsoleCP, GetConsoleMode, GetConsoleOutputCP, GetConsoleScreenBufferInfo,
-        GetNumberOfConsoleInputEvents, ReadConsoleInputW, SetConsoleCP, SetConsoleMode,
+        GetNumberOfConsoleInputEvents, ReadConsoleInputA, SetConsoleCP, SetConsoleMode,
         SetConsoleOutputCP, CONSOLE_MODE, CONSOLE_SCREEN_BUFFER_INFO, INPUT_RECORD,
     },
 };
@@ -114,12 +114,12 @@ impl InputHandle {
         let zeroed: INPUT_RECORD = unsafe { mem::zeroed() };
         res.resize(num_events, zeroed);
         let mut num = 0;
-        // FIXME: <https://learn.microsoft.com/en-us/windows/console/classic-vs-vt#unicode>
+        // NOTE: <https://learn.microsoft.com/en-us/windows/console/classic-vs-vt#unicode>
         // > UTF-8 support in the console can be utilized via the A variant of Console APIs
         // > against console handles after setting the codepage to 65001 or CP_UTF8 with the
         // > SetConsoleOutputCP and SetConsoleCP methods, as appropriate.
         if unsafe {
-            ReadConsoleInputW(
+            ReadConsoleInputA(
                 self.as_raw_handle(),
                 res.as_mut_ptr(),
                 num_events as u32,

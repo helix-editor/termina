@@ -32,10 +32,12 @@ fn main() -> io::Result<()> {
 }
 
 fn print_events(terminal: PlatformTerminal) -> io::Result<()> {
-    loop {
+    let mut i = 0;
+    while i < 2 {
         let event = terminal.read()?;
-        println!("Event: {event:?}");
+        i += 1;
+        println!("Event: {event:?}\r");
     }
 
-    // Ok(())
+    Ok(())
 }
