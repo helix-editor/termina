@@ -155,13 +155,13 @@ impl Terminal for UnixTerminal {
 
 impl Drop for UnixTerminal {
     fn drop(&mut self) {
+        self.write.flush().unwrap();
         termios::tcsetattr(
             self.write.get_ref(),
             termios::OptionalActions::Now,
             &self.original_termios,
         )
         .expect("failed to restore termios state");
-        self.write.flush().unwrap();
     }
 }
 

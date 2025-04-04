@@ -1,4 +1,4 @@
-use crate::input::KeyEvent;
+use crate::input::{KeyEvent, MouseEvent};
 
 pub(crate) mod reader;
 pub(crate) mod source;
@@ -7,6 +7,7 @@ pub(crate) mod stream;
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Event {
     Key(KeyEvent),
+    Mouse(MouseEvent),
     /// The window was resized to the given dimensions.
     WindowResized {
         rows: u16,

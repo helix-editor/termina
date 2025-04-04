@@ -4,6 +4,7 @@ use crate::{
     event::InternalEvent,
     input::{
         KeyCode, KeyEvent, KeyEventKind, KeyEventState, MediaKeyCode, ModifierKeyCode, Modifiers,
+        MouseButton, MouseEvent, MouseEventKind,
     },
     Event,
 };
@@ -108,6 +109,13 @@ mod windows {
 #[derive(Debug)]
 struct MalformedSequenceError;
 
+// This is a bit hacky but cuts down on boilerplate conversions
+impl From<str::Utf8Error> for MalformedSequenceError {
+    fn from(_: str::Utf8Error) -> Self {
+        Self
+    }
+}
+
 type Result<T> = std::result::Result<T, MalformedSequenceError>;
 
 macro_rules! bail {
@@ -117,11 +125,6 @@ macro_rules! bail {
 }
 
 fn parse_event(buffer: &[u8], maybe_more: bool) -> Result<Option<InternalEvent>> {
-    // TODO: remove
-    // eprintln!(
-    //     "parsing buffer {buffer:?} ({:?})\r",
-    //     str::from_utf8(buffer).ok()
-    // );
     if buffer.is_empty() {
         return Ok(None);
     }
@@ -275,7 +278,7 @@ fn parse_csi(buffer: &[u8]) -> Result<Option<InternalEvent>> {
             state: KeyEventState::NONE,
         })),
         b'M' => todo!("normal mouse"),
-        b'<' => todo!("SGR mouse"),
+        b'<' => return parse_csi_sgr_mouse(buffer),
         b'I' => Some(Event::FocusIn),
         b'O' => Some(Event::FocusOut),
         b';' => return parse_csi_modifier_key_code(buffer),
@@ -352,8 +355,7 @@ fn parse_csi_u_encoded_key_code(buffer: &[u8]) -> Result<Option<InternalEvent>> 
     // the `CSI u` (a.k.a. "Fix Keyboard Input on Terminals - Please", https://www.leonerd.org.uk/hacks/fixterms/)
     // or Kitty Keyboard Protocol (https://sw.kovidgoyal.net/kitty/keyboard-protocol/) specifications.
     // This CSI sequence is a tuple of semicolon-separated numbers.
-    let s =
-        std::str::from_utf8(&buffer[2..buffer.len() - 1]).map_err(|_| MalformedSequenceError)?;
+    let s = str::from_utf8(&buffer[2..buffer.len() - 1])?;
     let mut split = s.split(';');
 
     // In `CSI u`, this is parsed as:
@@ -511,10 +513,8 @@ fn parse_key_event_kind(kind: u8) -> KeyEventKind {
 }
 
 fn parse_csi_modifier_key_code(buffer: &[u8]) -> Result<Option<InternalEvent>> {
-    assert!(buffer.starts_with(b"\x1B[")); // ESC [
-                                           //
-    let s =
-        std::str::from_utf8(&buffer[2..buffer.len() - 1]).map_err(|_| MalformedSequenceError)?;
+    assert!(buffer.starts_with(b"\x1B[")); // CSI
+    let s = str::from_utf8(&buffer[2..buffer.len() - 1])?;
     let mut split = s.split(';');
 
     split.next();
@@ -567,8 +567,7 @@ fn parse_csi_special_key_code(buffer: &[u8]) -> Result<Option<InternalEvent>> {
     assert!(buffer.starts_with(b"\x1B[")); // CSI
     assert!(buffer.ends_with(b"~"));
 
-    let s =
-        std::str::from_utf8(&buffer[2..buffer.len() - 1]).map_err(|_| MalformedSequenceError)?;
+    let s = str::from_utf8(&buffer[2..buffer.len() - 1])?;
     let mut split = s.split(';');
 
     // This CSI sequence can be a list of semicolon-separated numbers.
@@ -709,4 +708,97 @@ fn translate_functional_key_code(codepoint: u32) -> Option<(KeyCode, KeyEventSta
     }
 
     None
+}
+
+fn parse_csi_sgr_mouse(buffer: &[u8]) -> Result<Option<InternalEvent>> {
+    // CSI < Cb ; Cx ; Cy (;) (M or m)
+
+    assert!(buffer.starts_with(b"\x1B[<")); // CSI <
+
+    if !buffer.ends_with(b"m") && !buffer.ends_with(b"M") {
+        return Ok(None);
+    }
+
+    let s = str::from_utf8(&buffer[3..buffer.len() - 1])?;
+    let mut split = s.split(';');
+
+    let cb = next_parsed::<u8>(&mut split)?;
+    let (kind, modifiers) = parse_cb(cb)?;
+
+    // See http://www.xfree86.org/current/ctlseqs.html#Mouse%20Tracking
+    // The upper left character position on the terminal is denoted as 1,1.
+    // Subtract 1 to keep it synced with cursor
+    let cx = next_parsed::<u16>(&mut split)? - 1;
+    let cy = next_parsed::<u16>(&mut split)? - 1;
+
+    // When button 3 in Cb is used to represent mouse release, you can't tell which button was
+    // released. SGR mode solves this by having the sequence end with a lowercase m if it's a
+    // button release and an uppercase M if it's a button press.
+    //
+    // We've already checked that the last character is a lowercase or uppercase M at the start of
+    // this function, so we just need one if.
+    let kind = if buffer.last() == Some(&b'm') {
+        match kind {
+            MouseEventKind::Down(button) => MouseEventKind::Up(button),
+            other => other,
+        }
+    } else {
+        kind
+    };
+
+    Ok(Some(InternalEvent::Event(Event::Mouse(MouseEvent {
+        kind,
+        column: cx,
+        row: cy,
+        modifiers,
+    }))))
+}
+
+/// Cb is the byte of a mouse input that contains the button being used, the key modifiers being
+/// held and whether the mouse is dragging or not.
+///
+/// Bit layout of cb, from low to high:
+///
+/// - button number
+/// - button number
+/// - shift
+/// - meta (alt)
+/// - control
+/// - mouse is dragging
+/// - button number
+/// - button number
+fn parse_cb(cb: u8) -> Result<(MouseEventKind, Modifiers)> {
+    let button_number = (cb & 0b0000_0011) | ((cb & 0b1100_0000) >> 4);
+    let dragging = cb & 0b0010_0000 == 0b0010_0000;
+
+    let kind = match (button_number, dragging) {
+        (0, false) => MouseEventKind::Down(MouseButton::Left),
+        (1, false) => MouseEventKind::Down(MouseButton::Middle),
+        (2, false) => MouseEventKind::Down(MouseButton::Right),
+        (0, true) => MouseEventKind::Drag(MouseButton::Left),
+        (1, true) => MouseEventKind::Drag(MouseButton::Middle),
+        (2, true) => MouseEventKind::Drag(MouseButton::Right),
+        (3, false) => MouseEventKind::Up(MouseButton::Left),
+        (3, true) | (4, true) | (5, true) => MouseEventKind::Moved,
+        (4, false) => MouseEventKind::ScrollUp,
+        (5, false) => MouseEventKind::ScrollDown,
+        (6, false) => MouseEventKind::ScrollLeft,
+        (7, false) => MouseEventKind::ScrollRight,
+        // We do not support other buttons.
+        _ => bail!(),
+    };
+
+    let mut modifiers = Modifiers::empty();
+
+    if cb & 0b0000_0100 == 0b0000_0100 {
+        modifiers |= Modifiers::SHIFT;
+    }
+    if cb & 0b0000_1000 == 0b0000_1000 {
+        modifiers |= Modifiers::ALT;
+    }
+    if cb & 0b0001_0000 == 0b0001_0000 {
+        modifiers |= Modifiers::CONTROL;
+    }
+
+    Ok((kind, modifiers))
 }

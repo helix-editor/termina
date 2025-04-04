@@ -24,7 +24,7 @@ fn main() -> io::Result<()> {
 
     write!(
         terminal,
-        "{}{}{}",
+        "{}{}{}{}{}{}{}{}",
         csi::Csi::Keyboard(csi::Keyboard::PushFlags(
             KittyKeyboardFlags::DISAMBIGUATE_ESCAPE_CODES
                 | KittyKeyboardFlags::REPORT_ALTERNATE_KEYS
@@ -35,7 +35,23 @@ fn main() -> io::Result<()> {
         csi::Csi::Mode(csi::Mode::SetDecPrivateMode(csi::DecPrivateMode::Code(
             csi::DecPrivateModeCode::BracketedPaste
         ))),
+        csi::Csi::Mode(csi::Mode::SetDecPrivateMode(csi::DecPrivateMode::Code(
+            csi::DecPrivateModeCode::MouseTracking
+        ))),
+        csi::Csi::Mode(csi::Mode::SetDecPrivateMode(csi::DecPrivateMode::Code(
+            csi::DecPrivateModeCode::ButtonEventMouse
+        ))),
+        csi::Csi::Mode(csi::Mode::SetDecPrivateMode(csi::DecPrivateMode::Code(
+            csi::DecPrivateModeCode::AnyEventMouse
+        ))),
+        csi::Csi::Mode(csi::Mode::SetDecPrivateMode(csi::DecPrivateMode::Code(
+            csi::DecPrivateModeCode::RXVTMouse
+        ))),
+        csi::Csi::Mode(csi::Mode::SetDecPrivateMode(csi::DecPrivateMode::Code(
+            csi::DecPrivateModeCode::SGRMouse
+        ))),
     )?;
+    terminal.flush()?;
 
     let mut size = terminal.get_dimensions()?;
     loop {
@@ -59,13 +75,28 @@ fn main() -> io::Result<()> {
 
     write!(
         terminal,
-        "{}{}{}",
+        "{}{}{}{}{}{}{}{}",
         csi::Csi::Keyboard(csi::Keyboard::PopFlags(1)),
         csi::Csi::Mode(csi::Mode::ResetDecPrivateMode(csi::DecPrivateMode::Code(
             csi::DecPrivateModeCode::FocusTracking
         ))),
         csi::Csi::Mode(csi::Mode::ResetDecPrivateMode(csi::DecPrivateMode::Code(
             csi::DecPrivateModeCode::BracketedPaste
+        ))),
+        csi::Csi::Mode(csi::Mode::ResetDecPrivateMode(csi::DecPrivateMode::Code(
+            csi::DecPrivateModeCode::MouseTracking
+        ))),
+        csi::Csi::Mode(csi::Mode::ResetDecPrivateMode(csi::DecPrivateMode::Code(
+            csi::DecPrivateModeCode::ButtonEventMouse
+        ))),
+        csi::Csi::Mode(csi::Mode::ResetDecPrivateMode(csi::DecPrivateMode::Code(
+            csi::DecPrivateModeCode::AnyEventMouse
+        ))),
+        csi::Csi::Mode(csi::Mode::ResetDecPrivateMode(csi::DecPrivateMode::Code(
+            csi::DecPrivateModeCode::RXVTMouse
+        ))),
+        csi::Csi::Mode(csi::Mode::ResetDecPrivateMode(csi::DecPrivateMode::Code(
+            csi::DecPrivateModeCode::SGRMouse
         ))),
     )?;
 
