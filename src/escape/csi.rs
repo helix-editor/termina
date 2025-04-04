@@ -1,4 +1,7 @@
-use std::fmt::{self, Display};
+use std::{
+    fmt::{self, Display},
+    num::NonZeroU32,
+};
 
 use crate::{
     event::Modifiers,
@@ -18,7 +21,7 @@ pub enum Csi {
     /// "Set Graphics Rendition" (SGR).
     /// These sequences affect how the cell is rendered by the terminal.
     Sgr(Sgr),
-    // Cursor(Cursor),
+    Cursor(Cursor),
     Mode(Mode),
     Mouse(MouseReport),
     Keyboard(Keyboard),
@@ -32,6 +35,7 @@ impl Display for Csi {
         write!(f, "\x1b[")?;
         match self {
             Self::Sgr(sgr) => sgr.fmt(f),
+            Self::Cursor(cursor) => cursor.fmt(f),
             Self::Mode(mode) => mode.fmt(f),
             Self::Mouse(report) => report.fmt(f),
             Self::Keyboard(keyboard) => keyboard.fmt(f),
@@ -163,6 +167,295 @@ impl Display for Sgr {
             }
         }
         write!(f, "m")
+    }
+}
+
+// Cursor
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Cursor {
+    /// CBT Moves cursor to the Ps tabs backward. The default value of Ps is 1.
+    BackwardTabulation(u32),
+
+    /// TBC - TABULATION CLEAR
+    TabulationClear(TabulationClear),
+
+    /// CHA: Moves cursor to the Ps-th column of the active line. The default
+    /// value of Ps is 1.
+    CharacterAbsolute(OneBased),
+
+    /// HPA CHARACTER POSITION ABSOLUTE
+    /// HPA Moves cursor to the Ps-th column of the active line. The default
+    /// value of Ps is 1.
+    CharacterPositionAbsolute(OneBased),
+
+    /// HPB - CHARACTER POSITION BACKWARD
+    /// HPB Moves cursor to the left Ps columns. The default value of Ps is 1.
+    CharacterPositionBackward(u32),
+
+    /// HPR - CHARACTER POSITION FORWARD
+    /// HPR Moves cursor to the right Ps columns. The default value of Ps is 1.
+    CharacterPositionForward(u32),
+
+    /// HVP - CHARACTER AND LINE POSITION
+    /// HVP Moves cursor to the Ps1-th line and to the Ps2-th column. The
+    /// default value of Ps1 and Ps2 is 1.
+    CharacterAndLinePosition {
+        line: OneBased,
+        col: OneBased,
+    },
+
+    /// VPA - LINE POSITION ABSOLUTE
+    /// Move to the corresponding vertical position (line Ps) of the current
+    /// column. The default value of Ps is 1.
+    LinePositionAbsolute(u32),
+
+    /// VPB - LINE POSITION BACKWARD
+    /// Moves cursor up Ps lines in the same column. The default value of Ps is
+    /// 1.
+    LinePositionBackward(u32),
+
+    /// VPR - LINE POSITION FORWARD
+    /// Moves cursor down Ps lines in the same column. The default value of Ps
+    /// is 1.
+    LinePositionForward(u32),
+
+    /// CHT
+    /// Moves cursor to the Ps tabs forward. The default value of Ps is 1.
+    ForwardTabulation(u32),
+
+    /// CNL Moves cursor to the first column of Ps-th following line. The
+    /// default value of Ps is 1.
+    NextLine(u32),
+
+    /// CPL Moves cursor to the first column of Ps-th preceding line. The
+    /// default value of Ps is 1.
+    PrecedingLine(u32),
+
+    /// CPR - ACTIVE POSITION REPORT
+    /// If the DEVICE COMPONENT SELECT MODE (DCSM)
+    /// is set to PRESENTATION, CPR is used to report the active presentation
+    /// position of the sending device as residing in the presentation
+    /// component at the n-th line position according to the line progression
+    /// and at the m-th character position according to the character path,
+    /// where n equals the value of Pn1 and m equal s the value of Pn2.
+    /// If the DEVICE COMPONENT SELECT MODE (DCSM) is set to DATA, CPR is used
+    /// to report the active data position of the sending device as
+    /// residing in the data component at the n-th line position according
+    /// to the line progression and at the m-th character position
+    /// according to the character progression, where n equals the value of
+    /// Pn1 and m equals the value of Pn2. CPR may be solicited by a DEVICE
+    /// STATUS REPORT (DSR) or be sent unsolicited .
+    ActivePositionReport {
+        line: OneBased,
+        col: OneBased,
+    },
+
+    /// CPR: this is the request from the client.
+    /// The terminal will respond with ActivePositionReport.
+    RequestActivePositionReport,
+
+    /// SCP - Save Cursor Position.
+    /// Only works when DECLRMM is disabled
+    SaveCursor,
+    RestoreCursor,
+
+    /// CTC - CURSOR TABULATION CONTROL
+    /// CTC causes one or more tabulation stops to be set or cleared in the
+    /// presentation component, depending on the parameter values.
+    /// In the case of parameter values 0, 2 or 4 the number of lines affected
+    /// depends on the setting of the TABULATION STOP MODE (TSM).
+    TabulationControl(CursorTabulationControl),
+
+    /// CUB - Cursor Left
+    /// Moves cursor to the left Ps columns. The default value of Ps is 1.
+    Left(u32),
+
+    /// CUD - Cursor Down
+    Down(u32),
+
+    /// CUF - Cursor Right
+    Right(u32),
+
+    /// CUU - Cursor Up
+    Up(u32),
+
+    /// CUP - Cursor Position
+    /// Moves cursor to the Ps1-th line and to the Ps2-th column. The default
+    /// value of Ps1 and Ps2 is 1.
+    Position {
+        line: OneBased,
+        col: OneBased,
+    },
+
+    /// CVT - Cursor Line Tabulation
+    /// CVT causes the active presentation position to be moved to the
+    /// corresponding character position of the line corresponding to the n-th
+    /// following line tabulation stop in the presentation component, where n
+    /// equals the value of Pn.
+    LineTabulation(u32),
+
+    /// DECSTBM - Set top and bottom margins.
+    SetTopAndBottomMargins {
+        top: OneBased,
+        bottom: OneBased,
+    },
+
+    /// https://vt100.net/docs/vt510-rm/DECSLRM.html
+    SetLeftAndRightMargins {
+        left: OneBased,
+        right: OneBased,
+    },
+
+    CursorStyle(CursorStyle),
+}
+
+impl Display for Cursor {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        fn write_csi<T: Default + Eq + Display>(
+            value: T,
+            f: &mut fmt::Formatter<'_>,
+            control: &str,
+        ) -> fmt::Result {
+            if value == T::default() {
+                write!(f, "{control}")
+            } else {
+                write!(f, "{value}{control}")
+            }
+        }
+
+        match self {
+            Cursor::BackwardTabulation(n) => write_csi(*n, f, "Z"),
+            Cursor::TabulationClear(n) => write_csi(*n, f, "g"),
+            Cursor::CharacterAbsolute(n) => write_csi(*n, f, "G"),
+            Cursor::CharacterPositionAbsolute(n) => write_csi(*n, f, "``"),
+            Cursor::CharacterPositionBackward(n) => write_csi(*n, f, "j"),
+            Cursor::CharacterPositionForward(n) => write_csi(*n, f, "a"),
+            Cursor::CharacterAndLinePosition { line, col } => write!(f, "{line};{col}f"),
+            Cursor::LinePositionAbsolute(n) => write_csi(*n, f, "d"),
+            Cursor::LinePositionBackward(n) => write_csi(*n, f, "k"),
+            Cursor::LinePositionForward(n) => write_csi(*n, f, "e"),
+            Cursor::ForwardTabulation(n) => write_csi(*n, f, "I"),
+            Cursor::NextLine(n) => write_csi(*n, f, "E"),
+            Cursor::PrecedingLine(n) => write_csi(*n, f, "F"),
+            Cursor::ActivePositionReport { line, col } => write!(f, "{line};{col}R"),
+            Cursor::RequestActivePositionReport => write!(f, "6n"),
+            Cursor::SaveCursor => write!(f, "s"),
+            Cursor::RestoreCursor => write!(f, "u"),
+            Cursor::TabulationControl(n) => write_csi(*n, f, "W"),
+            Cursor::Left(n) => write_csi(*n, f, "D"),
+            Cursor::Down(n) => write_csi(*n, f, "B"),
+            Cursor::Right(n) => write_csi(*n, f, "C"),
+            Cursor::Up(n) => write_csi(*n, f, "A"),
+            Cursor::Position { line, col } => write!(f, "{line};{col}H"),
+            Cursor::LineTabulation(n) => write_csi(*n, f, "Y"),
+            Cursor::SetTopAndBottomMargins { top, bottom } => {
+                if top.get() == 1 && bottom.get() == u32::MAX {
+                    write!(f, "r")
+                } else {
+                    write!(f, "{top};{bottom}r")
+                }
+            }
+            Cursor::SetLeftAndRightMargins { left, right } => {
+                if left.get() == 1 && right.get() == u32::MAX {
+                    write!(f, "s")
+                } else {
+                    write!(f, "{left};{right}s")
+                }
+            }
+            Cursor::CursorStyle(style) => write!(f, "{} q", *style as u8),
+        }
+    }
+}
+
+#[derive(Debug, Default, Clone, Copy, PartialEq, Eq)]
+pub enum CursorStyle {
+    #[default]
+    Default = 0,
+    BlinkingBlock = 1,
+    SteadyBlock = 2,
+    BlinkingUnderline = 3,
+    SteadyUnderline = 4,
+    BlinkingBar = 5,
+    SteadyBar = 6,
+}
+
+impl Display for CursorStyle {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "{}", *self as u8)
+    }
+}
+
+#[derive(Debug, Default, Clone, Copy, PartialEq, Eq)]
+pub enum CursorTabulationControl {
+    #[default]
+    SetCharacterTabStopAtActivePosition = 0,
+    SetLineTabStopAtActiveLine = 1,
+    ClearCharacterTabStopAtActivePosition = 2,
+    ClearLineTabstopAtActiveLine = 3,
+    ClearAllCharacterTabStopsAtActiveLine = 4,
+    ClearAllCharacterTabStops = 5,
+    ClearAllLineTabStops = 6,
+}
+
+impl Display for CursorTabulationControl {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "{}", *self as u8)
+    }
+}
+
+#[derive(Debug, Default, Clone, Copy, PartialEq, Eq)]
+pub enum TabulationClear {
+    #[default]
+    ClearCharacterTabStopAtActivePosition = 0,
+    ClearLineTabStopAtActiveLine = 1,
+    ClearCharacterTabStopsAtActiveLine = 2,
+    ClearAllCharacterTabStops = 3,
+    ClearAllLineTabStops = 4,
+    ClearAllTabStops = 5,
+}
+
+impl Display for TabulationClear {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "{}", *self as u8)
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct OneBased(NonZeroU32);
+
+impl OneBased {
+    pub const fn new(n: u32) -> Option<Self> {
+        match NonZeroU32::new(n) {
+            Some(n) => Some(Self(n)),
+            None => None,
+        }
+    }
+
+    pub const fn get(self) -> u32 {
+        self.0.get()
+    }
+
+    pub const fn get_zero_based(self) -> u32 {
+        self.get() - 1
+    }
+}
+
+impl Default for OneBased {
+    fn default() -> Self {
+        Self(unsafe { NonZeroU32::new_unchecked(1) })
+    }
+}
+
+impl Display for OneBased {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        self.0.fmt(f)
+    }
+}
+
+impl From<NonZeroU32> for OneBased {
+    fn from(n: NonZeroU32) -> Self {
+        Self(n)
     }
 }
 

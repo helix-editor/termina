@@ -1,4 +1,4 @@
-use std::{collections::VecDeque, str};
+use std::{collections::VecDeque, num::NonZeroU32, str};
 
 use crate::{
     escape::csi::{self, Csi, KittyKeyboardFlags, ThemeMode},
@@ -878,10 +878,12 @@ fn parse_csi_cursor_position(buffer: &[u8]) -> Result<Option<InternalEvent>> {
 
     let mut split = s.split(';');
 
-    let y = next_parsed::<u16>(&mut split)? - 1;
-    let x = next_parsed::<u16>(&mut split)? - 1;
+    let line = next_parsed::<NonZeroU32>(&mut split)?.into();
+    let col = next_parsed::<NonZeroU32>(&mut split)?.into();
 
-    Ok(Some(InternalEvent::CursorPosition(x, y)))
+    Ok(Some(InternalEvent::Csi(Csi::Cursor(
+        csi::Cursor::ActivePositionReport { line, col },
+    ))))
 }
 
 fn parse_csi_keyboard_enhancement_flags(buffer: &[u8]) -> Result<Option<InternalEvent>> {
