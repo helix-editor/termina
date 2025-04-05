@@ -1,6 +1,9 @@
 use std::{
     io::{self, Read, Write as _},
-    os::{fd::AsFd, unix::net::UnixStream},
+    os::{
+        fd::{AsFd, BorrowedFd},
+        unix::net::UnixStream,
+    },
     sync::Arc,
     time::Duration,
 };
@@ -82,7 +85,11 @@ impl EventSource for UnixEventSource {
             }
 
             let [read_ready, sigwinch_ready, wake_ready] = match poll(
-                [&self.read, &self.sigwinch_pipe, &self.wake_pipe],
+                [
+                    self.read.as_fd(),
+                    self.sigwinch_pipe.as_fd(),
+                    self.wake_pipe.as_fd(),
+                ],
                 timeout.leftover(),
             ) {
                 Ok(ready) => ready,
@@ -158,11 +165,11 @@ fn read_complete<F: Read>(mut file: F, buf: &mut [u8]) -> io::Result<usize> {
 /// This module is not meant to be generic. We consider `POLLIN` to be "ready" and do not look at
 /// other poll flags. For the sake of simplicity we also only allow polling exactly three FDs at
 /// a time - the exact amount we need for the event source.
-fn poll(fds: [&dyn AsFd; 3], timeout: Option<Duration>) -> std::io::Result<[bool; 3]> {
+fn poll(fds: [BorrowedFd<'_>; 3], timeout: Option<Duration>) -> std::io::Result<[bool; 3]> {
     use rustix::event::Timespec;
 
     #[cfg_attr(target_os = "macos", allow(dead_code))]
-    fn poll2(fds: [&dyn AsFd; 3], timeout: Option<&Timespec>) -> io::Result<[bool; 3]> {
+    fn poll2(fds: [BorrowedFd<'_>; 3], timeout: Option<&Timespec>) -> io::Result<[bool; 3]> {
         use rustix::event::{PollFd, PollFlags};
         let mut fds = [
             PollFd::new(&fds[0], PollFlags::IN),
@@ -180,15 +187,11 @@ fn poll(fds: [&dyn AsFd; 3], timeout: Option<Duration>) -> std::io::Result<[bool
     }
 
     #[cfg_attr(not(target_os = "macos"), allow(dead_code))]
-    fn select2(fds: [&dyn AsFd; 3], timeout: Option<&Timespec>) -> io::Result<[bool; 3]> {
+    fn select2(fds: [BorrowedFd<'_>; 3], timeout: Option<&Timespec>) -> io::Result<[bool; 3]> {
         use rustix::event::{fd_set_insert, fd_set_num_elements, FdSetElement, FdSetIter};
         use std::os::fd::AsRawFd;
 
-        let fds = [
-            fds[0].as_fd().as_raw_fd(),
-            fds[1].as_fd().as_raw_fd(),
-            fds[2].as_fd().as_raw_fd(),
-        ];
+        let fds = [fds[0].as_raw_fd(), fds[1].as_raw_fd(), fds[2].as_raw_fd()];
         // The array is non-empty so `max()` cannot return `None`.
         let nfds = fds.iter().copied().max().unwrap() + 1;
 
