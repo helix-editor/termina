@@ -1,4 +1,4 @@
-use crate::escape::csi::Csi;
+use crate::escape::{csi::Csi, dcs::Dcs};
 
 pub(crate) mod reader;
 pub(crate) mod source;
@@ -24,6 +24,7 @@ pub enum Event {
     Paste(String),
     /// A parsed escape sequence starting with CSI (control sequence introducer).
     Csi(Csi),
+    Dcs(Dcs),
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

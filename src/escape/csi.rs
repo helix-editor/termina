@@ -20,7 +20,7 @@ pub const EXIT_ALTERNATE_SCREEN: Csi = Csi::Mode(Mode::ResetDecPrivateMode(DecPr
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Csi {
-    /// "Set Graphics Rendition" (SGR).
+    /// "Select Graphics Rendition" (SGR).
     /// These sequences affect how the cell is rendered by the terminal.
     Sgr(Sgr),
     Cursor(Cursor),
@@ -30,6 +30,7 @@ pub enum Csi {
     Keyboard(Keyboard),
     Device(Device),
     Theme(Theme),
+    // TODO: Window(Box<Window>),
 }
 
 impl Display for Csi {
@@ -70,7 +71,7 @@ pub enum Sgr {
 
 impl Display for Sgr {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        fn format_true_color(
+        fn write_true_color(
             code: u8,
             RgbaColor {
                 red,
@@ -144,7 +145,7 @@ impl Display for Sgr {
             Self::Foreground(ColorSpec::BRIGHT_CYAN) => write!(f, "96")?,
             Self::Foreground(ColorSpec::BRIGHT_WHITE) => write!(f, "97")?,
             Self::Foreground(ColorSpec::PaletteIndex(idx)) => write!(f, "38:5:{idx}")?,
-            Self::Foreground(ColorSpec::TrueColor(color)) => format_true_color(38, *color, f)?,
+            Self::Foreground(ColorSpec::TrueColor(color)) => write_true_color(38, *color, f)?,
             Self::Background(ColorSpec::Reset) => write!(f, "49")?,
             Self::Background(ColorSpec::BLACK) => write!(f, "40")?,
             Self::Background(ColorSpec::RED) => write!(f, "41")?,
@@ -163,11 +164,11 @@ impl Display for Sgr {
             Self::Background(ColorSpec::BRIGHT_CYAN) => write!(f, "106")?,
             Self::Background(ColorSpec::BRIGHT_WHITE) => write!(f, "107")?,
             Self::Background(ColorSpec::PaletteIndex(idx)) => write!(f, "48:5:{idx}")?,
-            Self::Background(ColorSpec::TrueColor(color)) => format_true_color(48, *color, f)?,
+            Self::Background(ColorSpec::TrueColor(color)) => write_true_color(48, *color, f)?,
             Self::UnderlineColor(ColorSpec::Reset) => write!(f, "59")?,
             Self::UnderlineColor(ColorSpec::PaletteIndex(idx)) => write!(f, "58:5:{idx}")?,
             Self::UnderlineColor(ColorSpec::TrueColor(color)) => {
-                format_true_color(58, *color, f)?;
+                write_true_color(58, *color, f)?;
             }
         }
         write!(f, "m")
@@ -1078,6 +1079,8 @@ impl Display for Device {
         }
     }
 }
+
+// Theme
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Theme {

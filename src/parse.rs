@@ -1,12 +1,16 @@
 use std::{collections::VecDeque, num::NonZeroU32, str};
 
 use crate::{
-    escape::csi::{self, Csi, KittyKeyboardFlags, ThemeMode},
+    escape::{
+        self,
+        csi::{self, Csi, KittyKeyboardFlags, ThemeMode},
+        dcs,
+    },
     event::{
         KeyCode, KeyEvent, KeyEventKind, KeyEventState, MediaKeyCode, ModifierKeyCode, Modifiers,
         MouseButton, MouseEvent, MouseEventKind,
     },
-    Event,
+    style, Event,
 };
 
 #[derive(Debug)]
@@ -159,6 +163,7 @@ fn parse_event(buffer: &[u8], maybe_more: bool) -> Result<Option<Event>> {
                         }
                     }
                     b'[' => parse_csi(buffer),
+                    b'P' => parse_dcs(buffer),
                     b'\x1B' => Ok(Some(Event::Key(KeyCode::Escape.into()))),
                     _ => parse_event(&buffer[1..], maybe_more).map(|event_option| {
                         event_option.map(|event| {
@@ -969,4 +974,168 @@ fn parse_csi_synchronized_output_mode(buffer: &[u8]) -> Result<Option<Event>> {
             setting,
         },
     ))))
+}
+
+fn parse_dcs(buffer: &[u8]) -> Result<Option<Event>> {
+    assert!(buffer.starts_with(escape::DCS.as_bytes()));
+    if !buffer.ends_with(escape::ST.as_bytes()) {
+        return Ok(None);
+    }
+    match buffer[buffer.len() - 3] {
+        // SGR response: DCS Ps $ r SGR m ST
+        b'm' => {
+            if buffer.get(3..5) != Some(b"$r") {
+                bail!();
+            }
+            match buffer[2] {
+                b'0' => true,
+                b'1' => return Ok(Some(Event::Dcs(dcs::Dcs::InvalidRequest))),
+                _ => bail!(),
+            };
+            let s = str::from_utf8(&buffer[5..buffer.len() - 3])?;
+            let mut sgrs = Vec::new();
+            // TODO: is this correct? What about terminals that use ';' for true colors?
+            for sgr in s.split(';') {
+                sgrs.push(parse_sgr(sgr)?);
+            }
+            Ok(Some(Event::Dcs(dcs::Dcs::Response(
+                dcs::DcsResponse::GraphicRendition(sgrs),
+            ))))
+        }
+        _ => bail!(),
+    }
+}
+
+fn parse_sgr(buffer: &str) -> Result<csi::Sgr> {
+    use csi::Sgr;
+    use style::*;
+
+    let sgr = match buffer {
+        "0" => Sgr::Reset,
+        "22" => Sgr::Intensity(Intensity::Normal),
+        "1" => Sgr::Intensity(Intensity::Bold),
+        "2" => Sgr::Intensity(Intensity::Dim),
+        "24" => Sgr::Underline(Underline::None),
+        "4" => Sgr::Underline(Underline::Single),
+        "21" => Sgr::Underline(Underline::Double),
+        "4:3 " => Sgr::Underline(Underline::Curly),
+        "4:4" => Sgr::Underline(Underline::Dotted),
+        "4:5" => Sgr::Underline(Underline::Dashed),
+        "25" => Sgr::Blink(Blink::None),
+        "5" => Sgr::Blink(Blink::Slow),
+        "6" => Sgr::Blink(Blink::Rapid),
+        "3" => Sgr::Italic(true),
+        "23" => Sgr::Italic(false),
+        "7" => Sgr::Inverse(true),
+        "27" => Sgr::Inverse(false),
+        "8" => Sgr::Invisible(true),
+        "28" => Sgr::Invisible(false),
+        "9" => Sgr::StrikeThrough(true),
+        "29" => Sgr::StrikeThrough(false),
+        "53" => Sgr::Overline(true),
+        "55" => Sgr::Overline(false),
+        "10" => Sgr::Font(Font::Default),
+        "11" => Sgr::Font(Font::Alternate(1)),
+        "12" => Sgr::Font(Font::Alternate(2)),
+        "13" => Sgr::Font(Font::Alternate(3)),
+        "14" => Sgr::Font(Font::Alternate(4)),
+        "15" => Sgr::Font(Font::Alternate(5)),
+        "16" => Sgr::Font(Font::Alternate(6)),
+        "17" => Sgr::Font(Font::Alternate(7)),
+        "18" => Sgr::Font(Font::Alternate(8)),
+        "19" => Sgr::Font(Font::Alternate(9)),
+        "75" => Sgr::VerticalAlign(VerticalAlign::BaseLine),
+        "73" => Sgr::VerticalAlign(VerticalAlign::SuperScript),
+        "74" => Sgr::VerticalAlign(VerticalAlign::SubScript),
+        "39" => Sgr::Foreground(ColorSpec::Reset),
+        "30" => Sgr::Foreground(ColorSpec::BLACK),
+        "31" => Sgr::Foreground(ColorSpec::RED),
+        "32" => Sgr::Foreground(ColorSpec::GREEN),
+        "33" => Sgr::Foreground(ColorSpec::YELLOW),
+        "34" => Sgr::Foreground(ColorSpec::BLUE),
+        "35" => Sgr::Foreground(ColorSpec::MAGENTA),
+        "36" => Sgr::Foreground(ColorSpec::CYAN),
+        "37" => Sgr::Foreground(ColorSpec::WHITE),
+        "90" => Sgr::Foreground(ColorSpec::BRIGHT_BLACK),
+        "91" => Sgr::Foreground(ColorSpec::BRIGHT_RED),
+        "92" => Sgr::Foreground(ColorSpec::BRIGHT_GREEN),
+        "93" => Sgr::Foreground(ColorSpec::BRIGHT_YELLOW),
+        "94" => Sgr::Foreground(ColorSpec::BRIGHT_BLUE),
+        "95" => Sgr::Foreground(ColorSpec::BRIGHT_MAGENTA),
+        "96" => Sgr::Foreground(ColorSpec::BRIGHT_CYAN),
+        "97" => Sgr::Foreground(ColorSpec::BRIGHT_WHITE),
+        "49" => Sgr::Background(ColorSpec::Reset),
+        "40" => Sgr::Background(ColorSpec::BLACK),
+        "41" => Sgr::Background(ColorSpec::RED),
+        "42" => Sgr::Background(ColorSpec::GREEN),
+        "43" => Sgr::Background(ColorSpec::YELLOW),
+        "44" => Sgr::Background(ColorSpec::BLUE),
+        "45" => Sgr::Background(ColorSpec::MAGENTA),
+        "46" => Sgr::Background(ColorSpec::CYAN),
+        "47" => Sgr::Background(ColorSpec::WHITE),
+        "100" => Sgr::Background(ColorSpec::BRIGHT_BLACK),
+        "101" => Sgr::Background(ColorSpec::BRIGHT_RED),
+        "102" => Sgr::Background(ColorSpec::BRIGHT_GREEN),
+        "103" => Sgr::Background(ColorSpec::BRIGHT_YELLOW),
+        "104" => Sgr::Background(ColorSpec::BRIGHT_BLUE),
+        "105" => Sgr::Background(ColorSpec::BRIGHT_MAGENTA),
+        "106" => Sgr::Background(ColorSpec::BRIGHT_CYAN),
+        "107" => Sgr::Background(ColorSpec::BRIGHT_WHITE),
+        "59" => Sgr::UnderlineColor(ColorSpec::Reset),
+        _ => {
+            let mut split = buffer.split([';', ':']).filter(|s| !s.is_empty());
+            let first = next_parsed::<u8>(&mut split)?;
+            let color = match next_parsed::<u8>(&mut split)? {
+                2 => RgbColor {
+                    red: next_parsed::<u8>(&mut split)?,
+                    blue: next_parsed::<u8>(&mut split)?,
+                    green: next_parsed::<u8>(&mut split)?,
+                }
+                .into(),
+                5 => ColorSpec::PaletteIndex(next_parsed::<u8>(&mut split)?),
+                6 => RgbaColor {
+                    red: next_parsed::<u8>(&mut split)?,
+                    blue: next_parsed::<u8>(&mut split)?,
+                    green: next_parsed::<u8>(&mut split)?,
+                    alpha: next_parsed::<u8>(&mut split)?,
+                }
+                .into(),
+                _ => bail!(),
+            };
+            match first {
+                38 => Sgr::Foreground(color),
+                48 => Sgr::Background(color),
+                59 => Sgr::UnderlineColor(color),
+                _ => bail!(),
+            }
+        }
+    };
+    Ok(sgr)
+}
+
+#[cfg(test)]
+mod test {
+    use super::*;
+
+    #[test]
+    fn parse_dcs_sgr_response() {
+        // Example from <https://vt100.net/docs/vt510-rm/DECRPSS.html>
+        // > If the current graphic rendition is underline, blinking, and reverse, then the
+        // > terminal responds with the following DECRPSS sequence:
+        // > DCS 0 $ r 0 ; 4 ; 5 ; 7 m ST
+        let event = parse_event(b"\x1bP0$r0;4;5;7m\x1b\\", false)
+            .unwrap()
+            .unwrap();
+        assert_eq!(
+            event,
+            Event::Dcs(dcs::Dcs::Response(dcs::DcsResponse::GraphicRendition(
+                vec![
+                    csi::Sgr::Reset,
+                    csi::Sgr::Underline(style::Underline::Single),
+                    csi::Sgr::Blink(style::Blink::Slow),
+                    csi::Sgr::Inverse(true),
+                ]
+            )))
+        );
+    }
 }
