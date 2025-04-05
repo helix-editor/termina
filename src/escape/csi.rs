@@ -8,6 +8,8 @@ use crate::{
     style::{Blink, ColorSpec, Font, Intensity, RgbaColor, Underline, VerticalAlign},
 };
 
+// TODO: keep these consts? Or just document them?
+
 pub const ENTER_ALTERNATE_SCREEN: Csi = Csi::Mode(Mode::SetDecPrivateMode(DecPrivateMode::Code(
     DecPrivateModeCode::ClearAndEnableAlternateScreen,
 )));
@@ -22,6 +24,7 @@ pub enum Csi {
     /// These sequences affect how the cell is rendered by the terminal.
     Sgr(Sgr),
     Cursor(Cursor),
+    Edit(Edit),
     Mode(Mode),
     Mouse(MouseReport),
     Keyboard(Keyboard),
@@ -36,6 +39,7 @@ impl Display for Csi {
         match self {
             Self::Sgr(sgr) => sgr.fmt(f),
             Self::Cursor(cursor) => cursor.fmt(f),
+            Self::Edit(edit) => edit.fmt(f),
             Self::Mode(mode) => mode.fmt(f),
             Self::Mouse(report) => report.fmt(f),
             Self::Keyboard(keyboard) => keyboard.fmt(f),
@@ -457,6 +461,163 @@ impl From<NonZeroU32> for OneBased {
     fn from(n: NonZeroU32) -> Self {
         Self(n)
     }
+}
+
+// Edit
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum Edit {
+    /// DCH - DELETE CHARACTER
+    /// Deletes Ps characters from the cursor position to the right. The
+    /// default value of Ps is 1. If the DEVICE COMPONENT SELECT MODE
+    /// (DCSM) is set to PRESENTATION, DCH causes the contents of the
+    /// active presentation position and, depending on the setting of the
+    /// CHARACTER EDITING MODE (HEM), the contents of the n-1 preceding or
+    /// following character positions to be removed from the presentation
+    /// component, where n equals the value of Pn. The resulting gap is
+    /// closed by shifting the contents of the adjacent character positions
+    /// towards the active presentation position. At the other end of the
+    /// shifted part, n character positions are put into the erased state.
+    DeleteCharacter(u32),
+
+    /// DL - DELETE LINE
+    /// If the DEVICE COMPONENT SELECT MODE (DCSM) is set to PRESENTATION, DL
+    /// causes the contents of the active line (the line that contains the
+    /// active presentation position) and, depending on the setting of the
+    /// LINE EDITING MODE (VEM), the contents of the n-1 preceding or
+    /// following lines to be removed from the presentation component, where n
+    /// equals the value of Pn. The resulting gap is closed by shifting the
+    /// contents of a number of adjacent lines towards the active line. At
+    /// the other end of the shifted part, n lines are put into the
+    /// erased state.  The active presentation position is moved to the line
+    /// home position in the active line. The line home position is
+    /// established by the parameter value of SET LINE HOME (SLH). If the
+    /// TABULATION STOP MODE (TSM) is set to SINGLE, character tabulation stops
+    /// are cleared in the lines that are put into the erased state.  The
+    /// extent of the shifted part is established by SELECT EDITING EXTENT
+    /// (SEE).  Any occurrences of the start or end of a selected area, the
+    /// start or end of a qualified area, or a tabulation stop in the shifted
+    /// part, are also shifted.
+    DeleteLine(u32),
+
+    /// ECH - ERASE CHARACTER
+    /// If the DEVICE COMPONENT SELECT MODE (DCSM) is set to PRESENTATION, ECH
+    /// causes the active presentation position and the n-1 following
+    /// character positions in the presentation component to be put into
+    /// the erased state, where n equals the value of Pn.
+    EraseCharacter(u32),
+
+    /// EL - ERASE IN LINE
+    /// If the DEVICE COMPONENT SELECT MODE (DCSM) is set to PRESENTATION, EL
+    /// causes some or all character positions of the active line (the line
+    /// which contains the active presentation position in the presentation
+    /// component) to be put into the erased state, depending on the
+    /// parameter values
+    EraseInLine(EraseInLine),
+
+    /// ICH - INSERT CHARACTER
+    /// If the DEVICE COMPONENT SELECT MODE (DCSM) is set to PRESENTATION, ICH
+    /// is used to prepare the insertion of n characters, by putting into the
+    /// erased state the active presentation position and, depending on the
+    /// setting of the CHARACTER EDITING MODE (HEM), the n-1 preceding or
+    /// following character positions in the presentation component, where n
+    /// equals the value of Pn. The previous contents of the active
+    /// presentation position and an adjacent string of character positions are
+    /// shifted away from the active presentation position. The contents of n
+    /// character positions at the other end of the shifted part are removed.
+    /// The active presentation position is moved to the line home position in
+    /// the active line. The line home position is established by the parameter
+    /// value of SET LINE HOME (SLH).
+    InsertCharacter(u32),
+
+    /// IL - INSERT LINE
+    /// If the DEVICE COMPONENT SELECT MODE (DCSM) is set to PRESENTATION, IL
+    /// is used to prepare the insertion of n lines, by putting into the
+    /// erased state in the presentation component the active line (the
+    /// line that contains the active presentation position) and, depending on
+    /// the setting of the LINE EDITING MODE (VEM), the n-1 preceding or
+    /// following lines, where n equals the value of Pn. The previous
+    /// contents of the active line and of adjacent lines are shifted away
+    /// from the active line. The contents of n lines at the other end of the
+    /// shifted part are removed. The active presentation position is moved
+    /// to the line home position in the active line. The line home
+    /// position is established by the parameter value of SET LINE
+    /// HOME (SLH).
+    InsertLine(u32),
+
+    /// SD - SCROLL DOWN
+    /// SD causes the data in the presentation component to be moved by n line
+    /// positions if the line orientation is horizontal, or by n character
+    /// positions if the line orientation is vertical, such that the data
+    /// appear to move down; where n equals the value of Pn. The active
+    /// presentation position is not affected by this control function.
+    ///
+    /// Also known as Pan Up in DEC:
+    /// https://vt100.net/docs/vt510-rm/SD.html
+    ScrollDown(u32),
+
+    /// SU - SCROLL UP
+    /// SU causes the data in the presentation component to be moved by n line
+    /// positions if the line orientation is horizontal, or by n character
+    /// positions if the line orientation is vertical, such that the data
+    /// appear to move up; where n equals the value of Pn. The active
+    /// presentation position is not affected by this control function.
+    ScrollUp(u32),
+
+    /// ED - ERASE IN PAGE (XTerm calls this Erase in Display)
+    EraseInDisplay(EraseInDisplay),
+
+    /// REP - Repeat the preceding character n times
+    Repeat(u32),
+}
+
+impl Display for Edit {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        fn write_csi(param: u32, f: &mut fmt::Formatter<'_>, control: &str) -> fmt::Result {
+            if param == 1 {
+                write!(f, "{control}")
+            } else {
+                write!(f, "{param}{control}")
+            }
+        }
+
+        match self {
+            Self::DeleteCharacter(n) => write_csi(*n, f, "P"),
+            Self::DeleteLine(n) => write_csi(*n, f, "M"),
+            Self::EraseCharacter(n) => write_csi(*n, f, "X"),
+            Self::EraseInLine(n) => write_csi(*n as u32, f, "K"),
+            Self::InsertCharacter(n) => write_csi(*n, f, "@"),
+            Self::InsertLine(n) => write_csi(*n, f, "L"),
+            Self::ScrollDown(n) => write_csi(*n, f, "T"),
+            Self::ScrollUp(n) => write_csi(*n, f, "S"),
+            Self::EraseInDisplay(n) => write_csi(*n as u32, f, "J"),
+            Self::Repeat(n) => write_csi(*n, f, "b"),
+        }
+    }
+}
+
+#[derive(Debug, Default, Clone, Copy, PartialEq, Eq)]
+pub enum EraseInLine {
+    #[default]
+    EraseToEndOfLine = 0,
+    EraseToStartOfLine = 1,
+    EraseLine = 2,
+}
+
+#[derive(Debug, Default, Clone, Copy, PartialEq, Eq)]
+pub enum EraseInDisplay {
+    /// the active presentation position and the character positions up to the
+    /// end of the page are put into the erased state
+    #[default]
+    EraseToEndOfDisplay = 0,
+    /// the character positions from the beginning of the page up to and
+    /// including the active presentation position are put into the erased
+    /// state
+    EraseToStartOfDisplay = 1,
+    /// all character positions of the page are put into the erased state
+    EraseDisplay = 2,
+    /// Clears the scrollback.  This is an Xterm extension to ECMA-48.
+    EraseScrollback = 3,
 }
 
 // Mode
