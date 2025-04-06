@@ -1031,8 +1031,8 @@ fn parse_sgr(buffer: &str) -> Result<csi::Sgr> {
         "6" => Sgr::Blink(Blink::Rapid),
         "3" => Sgr::Italic(true),
         "23" => Sgr::Italic(false),
-        "7" => Sgr::Inverse(true),
-        "27" => Sgr::Inverse(false),
+        "7" => Sgr::Reverse(true),
+        "27" => Sgr::Reverse(false),
         "8" => Sgr::Invisible(true),
         "28" => Sgr::Invisible(false),
         "9" => Sgr::StrikeThrough(true),
@@ -1141,7 +1141,7 @@ mod test {
                     csi::Sgr::Reset,
                     csi::Sgr::Underline(style::Underline::Single),
                     csi::Sgr::Blink(style::Blink::Slow),
-                    csi::Sgr::Inverse(true),
+                    csi::Sgr::Reverse(true),
                 ])
             })
         );
