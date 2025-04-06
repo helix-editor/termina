@@ -1,7 +1,7 @@
 use rustix::termios::{self, Termios};
 use std::{
     fs,
-    io::{self, BufWriter, IsTerminal as _, Write as _},
+    io::{self, BufWriter, IsTerminal as _},
     os::unix::prelude::*,
 };
 
@@ -129,7 +129,16 @@ impl Terminal for UnixTerminal {
         Ok(())
     }
 
-    fn get_dimensions(&mut self) -> io::Result<(u16, u16)> {
+    fn reset_mode(&mut self) -> io::Result<()> {
+        termios::tcsetattr(
+            self.write.get_ref(),
+            termios::OptionalActions::Now,
+            &self.original_termios,
+        )?;
+        Ok(())
+    }
+
+    fn get_dimensions(&self) -> io::Result<(u16, u16)> {
         let winsize = termios::tcgetwinsize(self.write.get_ref())?;
         Ok((winsize.ws_row, winsize.ws_col))
     }
@@ -151,18 +160,6 @@ impl Terminal for UnixTerminal {
 
     fn read<F: Fn(&Event) -> bool>(&self, filter: F) -> io::Result<Event> {
         self.reader.read(filter)
-    }
-}
-
-impl Drop for UnixTerminal {
-    fn drop(&mut self) {
-        self.write.flush().unwrap();
-        termios::tcsetattr(
-            self.write.get_ref(),
-            termios::OptionalActions::Now,
-            &self.original_termios,
-        )
-        .expect("failed to restore termios state");
     }
 }
 

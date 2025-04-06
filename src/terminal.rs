@@ -36,7 +36,9 @@ pub trait Terminal: io::Write {
     /// While in "cooked" mode a terminal will interpret the incoming data in ways that are useful
     /// such as waiting for an Enter key press to pass input to the application.
     fn enter_cooked_mode(&mut self) -> io::Result<()>;
-    fn get_dimensions(&mut self) -> io::Result<(u16, u16)>;
+    /// Resets the mode to what was detected in `PlatformTerminal::new`.
+    fn reset_mode(&mut self) -> io::Result<()>;
+    fn get_dimensions(&self) -> io::Result<(u16, u16)>;
     fn event_stream<F: Fn(&Event) -> bool + Clone + Send + Sync + 'static>(
         &self,
         filter: F,
