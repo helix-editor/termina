@@ -5,8 +5,10 @@ pub enum Dcs {
     // DECRQSS: <https://vt100.net/docs/vt510-rm/DECRQSS.html>
     Request(DcsRequest),
     // DECRPSS
-    InvalidRequest,
-    Response(DcsResponse),
+    Response {
+        is_request_valid: bool,
+        value: DcsResponse,
+    },
 }
 
 impl Display for Dcs {
@@ -15,10 +17,12 @@ impl Display for Dcs {
         write!(f, "\x1bP")?;
         match self {
             // DCS $ q D...D ST
-            Self::Request(request) => write!(f, "P$q{request}\x1b\\")?,
+            Self::Request(request) => write!(f, "$q{request}")?,
             // DCS Ps $ r D...D ST
-            Self::InvalidRequest => write!(f, "1$r")?,
-            Self::Response(response) => write!(f, "0$r{response}")?,
+            Self::Response {
+                is_request_valid,
+                value,
+            } => write!(f, "{}$r{value}", if *is_request_valid { 0 } else { 1 })?,
         }
         // ST
         write!(f, "\x1b\\")
@@ -116,5 +120,18 @@ impl Display for DcsResponse {
                 Ok(())
             }
         }
+    }
+}
+
+#[cfg(test)]
+mod test {
+    use super::*;
+
+    #[test]
+    fn encoding() {
+        assert_eq!(
+            Dcs::Request(DcsRequest::GraphicRendition).to_string(),
+            "\x1bP$qm\x1b\\"
+        );
     }
 }

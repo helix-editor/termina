@@ -23,8 +23,16 @@ pub enum Event {
     /// sequence to deliver the entire pasted content.
     Paste(String),
     /// A parsed escape sequence starting with CSI (control sequence introducer).
+    // TODO: generic `Escape` event?
     Csi(Csi),
     Dcs(Dcs),
+}
+
+impl Event {
+    #[inline]
+    pub fn is_escape(&self) -> bool {
+        matches!(self, Self::Csi(_) | Self::Dcs(_))
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

@@ -987,9 +987,9 @@ fn parse_dcs(buffer: &[u8]) -> Result<Option<Event>> {
             if buffer.get(3..5) != Some(b"$r") {
                 bail!();
             }
-            match buffer[2] {
+            let is_request_valid = match buffer[2] {
                 b'0' => true,
-                b'1' => return Ok(Some(Event::Dcs(dcs::Dcs::InvalidRequest))),
+                b'1' => false,
                 _ => bail!(),
             };
             let s = str::from_utf8(&buffer[5..buffer.len() - 3])?;
@@ -998,9 +998,10 @@ fn parse_dcs(buffer: &[u8]) -> Result<Option<Event>> {
             for sgr in s.split(';') {
                 sgrs.push(parse_sgr(sgr)?);
             }
-            Ok(Some(Event::Dcs(dcs::Dcs::Response(
-                dcs::DcsResponse::GraphicRendition(sgrs),
-            ))))
+            Ok(Some(Event::Dcs(dcs::Dcs::Response {
+                is_request_valid,
+                value: dcs::DcsResponse::GraphicRendition(sgrs),
+            })))
         }
         _ => bail!(),
     }
@@ -1083,20 +1084,20 @@ fn parse_sgr(buffer: &str) -> Result<csi::Sgr> {
         "107" => Sgr::Background(ColorSpec::BRIGHT_WHITE),
         "59" => Sgr::UnderlineColor(ColorSpec::Reset),
         _ => {
-            let mut split = buffer.split([';', ':']).filter(|s| !s.is_empty());
+            let mut split = buffer.split(':').filter(|s| !s.is_empty());
             let first = next_parsed::<u8>(&mut split)?;
             let color = match next_parsed::<u8>(&mut split)? {
                 2 => RgbColor {
                     red: next_parsed::<u8>(&mut split)?,
-                    blue: next_parsed::<u8>(&mut split)?,
                     green: next_parsed::<u8>(&mut split)?,
+                    blue: next_parsed::<u8>(&mut split)?,
                 }
                 .into(),
                 5 => ColorSpec::PaletteIndex(next_parsed::<u8>(&mut split)?),
                 6 => RgbaColor {
                     red: next_parsed::<u8>(&mut split)?,
-                    blue: next_parsed::<u8>(&mut split)?,
                     green: next_parsed::<u8>(&mut split)?,
+                    blue: next_parsed::<u8>(&mut split)?,
                     alpha: next_parsed::<u8>(&mut split)?,
                 }
                 .into(),
@@ -1105,7 +1106,7 @@ fn parse_sgr(buffer: &str) -> Result<csi::Sgr> {
             match first {
                 38 => Sgr::Foreground(color),
                 48 => Sgr::Background(color),
-                59 => Sgr::UnderlineColor(color),
+                58 => Sgr::UnderlineColor(color),
                 _ => bail!(),
             }
         }
@@ -1128,14 +1129,15 @@ mod test {
             .unwrap();
         assert_eq!(
             event,
-            Event::Dcs(dcs::Dcs::Response(dcs::DcsResponse::GraphicRendition(
-                vec![
+            Event::Dcs(dcs::Dcs::Response {
+                is_request_valid: true,
+                value: dcs::DcsResponse::GraphicRendition(vec![
                     csi::Sgr::Reset,
                     csi::Sgr::Underline(style::Underline::Single),
                     csi::Sgr::Blink(style::Blink::Slow),
                     csi::Sgr::Inverse(true),
-                ]
-            )))
+                ])
+            })
         );
     }
 }
