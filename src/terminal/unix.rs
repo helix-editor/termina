@@ -73,8 +73,9 @@ fn open_pty() -> io::Result<(FileDescriptor, FileDescriptor)> {
         (read, write)
     };
 
-    // Activate non-blocking mode for the reader:
-    rustix::io::ioctl_fionbio(&read, true)?;
+    // Activate non-blocking mode for the reader.
+    // NOTE: this seems to make macOS consistently fail with io::ErrorKind::WouldBlock errors.
+    // rustix::io::ioctl_fionbio(&read, true)?;
 
     Ok((read, write))
 }
