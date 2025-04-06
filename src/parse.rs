@@ -1,4 +1,4 @@
-use std::{collections::VecDeque, num::NonZeroU32, str};
+use std::{collections::VecDeque, num::NonZeroU16, str};
 
 use crate::{
     escape::{
@@ -862,8 +862,8 @@ fn parse_csi_cursor_position(buffer: &[u8]) -> Result<Option<Event>> {
 
     let mut split = s.split(';');
 
-    let line = next_parsed::<NonZeroU32>(&mut split)?.into();
-    let col = next_parsed::<NonZeroU32>(&mut split)?.into();
+    let line = next_parsed::<NonZeroU16>(&mut split)?.into();
+    let col = next_parsed::<NonZeroU16>(&mut split)?.into();
 
     Ok(Some(Event::Csi(Csi::Cursor(
         csi::Cursor::ActivePositionReport { line, col },

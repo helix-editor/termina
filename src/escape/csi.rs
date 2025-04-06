@@ -1,6 +1,6 @@
 use std::{
     fmt::{self, Display},
-    num::NonZeroU32,
+    num::NonZeroU16,
 };
 
 use crate::{
@@ -355,14 +355,14 @@ impl Display for Cursor {
             Cursor::Position { line, col } => write!(f, "{line};{col}H"),
             Cursor::LineTabulation(n) => write_csi(*n, f, "Y"),
             Cursor::SetTopAndBottomMargins { top, bottom } => {
-                if top.get() == 1 && bottom.get() == u32::MAX {
+                if top.get() == 1 && bottom.get() == u16::MAX {
                     write!(f, "r")
                 } else {
                     write!(f, "{top};{bottom}r")
                 }
             }
             Cursor::SetLeftAndRightMargins { left, right } => {
-                if left.get() == 1 && right.get() == u32::MAX {
+                if left.get() == 1 && right.get() == u16::MAX {
                     write!(f, "s")
                 } else {
                     write!(f, "{left};{right}s")
@@ -427,28 +427,32 @@ impl Display for TabulationClear {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct OneBased(NonZeroU32);
+pub struct OneBased(NonZeroU16);
 
 impl OneBased {
-    pub const fn new(n: u32) -> Option<Self> {
-        match NonZeroU32::new(n) {
+    pub const fn new(n: u16) -> Option<Self> {
+        match NonZeroU16::new(n) {
             Some(n) => Some(Self(n)),
             None => None,
         }
     }
 
-    pub const fn get(self) -> u32 {
+    pub const fn from_zero_based(n: u16) -> Self {
+        Self(unsafe { NonZeroU16::new_unchecked(n + 1) })
+    }
+
+    pub const fn get(self) -> u16 {
         self.0.get()
     }
 
-    pub const fn get_zero_based(self) -> u32 {
+    pub const fn get_zero_based(self) -> u16 {
         self.get() - 1
     }
 }
 
 impl Default for OneBased {
     fn default() -> Self {
-        Self(unsafe { NonZeroU32::new_unchecked(1) })
+        Self(unsafe { NonZeroU16::new_unchecked(1) })
     }
 }
 
@@ -458,8 +462,8 @@ impl Display for OneBased {
     }
 }
 
-impl From<NonZeroU32> for OneBased {
-    fn from(n: NonZeroU32) -> Self {
+impl From<NonZeroU16> for OneBased {
+    fn from(n: NonZeroU16) -> Self {
         Self(n)
     }
 }
