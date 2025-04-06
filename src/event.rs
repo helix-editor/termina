@@ -120,6 +120,7 @@ pub enum KeyCode {
     PrintScreen,
     Pause,
     Menu,
+    Null,
     /// F1-F35 "function" keys
     Function(u8),
     Modifier(ModifierKeyCode),
