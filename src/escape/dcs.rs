@@ -22,7 +22,7 @@ impl Display for Dcs {
             Self::Response {
                 is_request_valid,
                 value,
-            } => write!(f, "{}$r{value}", if *is_request_valid { 0 } else { 1 })?,
+            } => write!(f, "{}$r{value}", if *is_request_valid { 1 } else { 0 })?,
         }
         // ST
         write!(f, "\x1b\\")

@@ -987,9 +987,13 @@ fn parse_dcs(buffer: &[u8]) -> Result<Option<Event>> {
             if buffer.get(3..5) != Some(b"$r") {
                 bail!();
             }
+            // NOTE: <https://www.xfree86.org/current/ctlseqs.html> says that '1' is a valid
+            // request and '0' is invalid while the vt100.net docs for DECRQSS say the opposite.
+            // Kitty and WezTerm both follow the ctlseqs doc.
             let is_request_valid = match buffer[2] {
-                b'0' => true,
-                b'1' => false,
+                b'1' => true,
+                // TODO: don't parse attributes if the request isn't valid?
+                b'0' => false,
                 _ => bail!(),
             };
             let s = str::from_utf8(&buffer[5..buffer.len() - 3])?;
@@ -1124,13 +1128,15 @@ mod test {
         // > If the current graphic rendition is underline, blinking, and reverse, then the
         // > terminal responds with the following DECRPSS sequence:
         // > DCS 0 $ r 0 ; 4 ; 5 ; 7 m ST
+        // NOTE: The vt100.net docs have the Ps part of this reversed. 0 is invalid and 1 is
+        // valid according to the xterm docs. See `parse_dcs`.
         let event = parse_event(b"\x1bP0$r0;4;5;7m\x1b\\", false)
             .unwrap()
             .unwrap();
         assert_eq!(
             event,
             Event::Dcs(dcs::Dcs::Response {
-                is_request_valid: true,
+                is_request_valid: false,
                 value: dcs::DcsResponse::GraphicRendition(vec![
                     csi::Sgr::Reset,
                     csi::Sgr::Underline(style::Underline::Single),
