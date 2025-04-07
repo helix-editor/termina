@@ -1,5 +1,7 @@
 use std::fmt::{self, Display};
 
+use crate::style::CursorStyle;
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Dcs {
     // DECRQSS: <https://vt100.net/docs/vt510-rm/DECRQSS.html>
@@ -83,13 +85,14 @@ impl Display for DcsRequest {
             Self::ProPrinterCharacterSet => write!(f, "*p"),
             Self::CommunicationSpeed => write!(f, "*r"),
             Self::CommunicationPort => write!(f, "*u"),
-            // TODO: is this correct or does SP stand for something...
-            Self::ScrollSpeed => write!(f, "SPp"),
-            Self::CursorStyle => write!(f, "SPq"),
-            Self::KeyClickVolume => write!(f, "SPr"),
-            Self::WarningBellVolume => write!(f, "SPt"),
-            Self::MarginBellVolume => write!(f, "SPu"),
-            Self::LockKeyStyle => write!(f, "SPv"),
+            // NOTE: space char is intentional - written as SP in
+            // <https://vt100.net/docs/vt510-rm/DECRPSS.html>
+            Self::ScrollSpeed => write!(f, " p"),
+            Self::CursorStyle => write!(f, " q"),
+            Self::KeyClickVolume => write!(f, " r"),
+            Self::WarningBellVolume => write!(f, " t"),
+            Self::MarginBellVolume => write!(f, " u"),
+            Self::LockKeyStyle => write!(f, " v"),
             Self::FlowControlType => write!(f, "*s"),
             Self::DisconnectDelayTime => write!(f, "$q"),
             Self::TransmitRateLimit => write!(f, "\"u"),
@@ -102,6 +105,7 @@ impl Display for DcsRequest {
 pub enum DcsResponse {
     /// SGR
     GraphicRendition(Vec<super::csi::Sgr>),
+    CursorStyle(CursorStyle),
     // There are others but adding them would mean adding a lot of parsing code...
 }
 
@@ -119,6 +123,7 @@ impl Display for DcsResponse {
                 }
                 Ok(())
             }
+            Self::CursorStyle(style) => write!(f, "{style} q"),
         }
     }
 }
@@ -132,6 +137,10 @@ mod test {
         assert_eq!(
             Dcs::Request(DcsRequest::GraphicRendition).to_string(),
             "\x1bP$qm\x1b\\"
+        );
+        assert_eq!(
+            Dcs::Request(DcsRequest::CursorStyle).to_string(),
+            "\x1bP$q q\x1b\\"
         );
     }
 }

@@ -30,6 +30,24 @@ pub enum Underline {
     Dashed = 5,
 }
 
+#[derive(Debug, Default, Clone, Copy, PartialEq, Eq)]
+pub enum CursorStyle {
+    #[default]
+    Default = 0,
+    BlinkingBlock = 1,
+    SteadyBlock = 2,
+    BlinkingUnderline = 3,
+    SteadyUnderline = 4,
+    BlinkingBar = 5,
+    SteadyBar = 6,
+}
+
+impl Display for CursorStyle {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "{}", *self as u8)
+    }
+}
+
 /// An 8-bit "256-color".
 ///
 /// Colors 0-15 are the same as `AnsiColor`s (0-7 being normal colors and 8-15 being "bright").
