@@ -29,7 +29,6 @@ pub enum Csi {
     Mouse(MouseReport),
     Keyboard(Keyboard),
     Device(Device),
-    Theme(Theme),
     // TODO: Window(Box<Window>),
 }
 
@@ -45,7 +44,6 @@ impl Display for Csi {
             Self::Mouse(report) => report.fmt(f),
             Self::Keyboard(keyboard) => keyboard.fmt(f),
             Self::Device(device) => device.fmt(f),
-            Self::Theme(theme) => theme.fmt(f),
         }
     }
 }
@@ -629,6 +627,9 @@ pub enum Mode {
         resource: XtermKeyModifierResource,
         value: Option<i64>,
     },
+    // <https://github.com/contour-terminal/contour/blob/master/docs/vt-extensions/color-palette-update-notifications.md>
+    QueryTheme,
+    ReportTheme(ThemeMode),
 }
 
 impl Display for Mode {
@@ -654,6 +655,8 @@ impl Display for Mode {
                 }
                 write!(f, "m")
             }
+            Self::QueryTheme => write!(f, "?996n"),
+            Self::ReportTheme(mode) => write!(f, "?997;{}n", *mode as u8),
         }
     }
 }
@@ -817,6 +820,12 @@ pub enum DecModeSetting {
     Reset = 2,
     PermanentlySet = 3,
     PermanentlyReset = 4,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ThemeMode {
+    Dark = 1,
+    Light = 2,
 }
 
 // Mouse
@@ -1062,29 +1071,6 @@ impl Display for Device {
             Self::StatusReport => write!(f, "5n"),
             Self::RequestTerminalNameAndVersion => write!(f, ">q"),
             Self::RequestTerminalParameters(n) => write!(f, "{};1;1;128;128;1;0x", n + 2),
-        }
-    }
-}
-
-// Theme
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum Theme {
-    Query,
-    Report(ThemeMode),
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum ThemeMode {
-    Dark = 1,
-    Light = 2,
-}
-
-impl Display for Theme {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            Self::Query => write!(f, "?996n"),
-            Self::Report(mode) => write!(f, "?997;{}n", *mode as u8),
         }
     }
 }

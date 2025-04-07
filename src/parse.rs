@@ -938,7 +938,9 @@ fn parse_csi_theme_mode(buffer: &[u8]) -> Result<Option<Event>> {
         _ => bail!(),
     };
 
-    Ok(Some(Event::Csi(Csi::Theme(csi::Theme::Report(theme_mode)))))
+    Ok(Some(Event::Csi(Csi::Mode(csi::Mode::ReportTheme(
+        theme_mode,
+    )))))
 }
 
 fn parse_csi_synchronized_output_mode(buffer: &[u8]) -> Result<Option<Event>> {
