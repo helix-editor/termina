@@ -136,7 +136,7 @@ checksum = "7fcf8323ef1faaee30a44a340193b1ac6814fd9b7b4e88e9d4519a3e4abe1cfd"
 
 [[package]]
 name = "termina"
-version = "0.1.0"
+version = "0.1.0-beta.1"
 dependencies = [
  "bitflags",
  "futures-core",
