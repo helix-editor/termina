@@ -131,6 +131,8 @@ fn main() -> io::Result<()> {
         ))),
     )?;
 
+    terminal.reset_mode()?;
+
     Ok(())
 }
 
