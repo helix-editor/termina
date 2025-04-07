@@ -6,7 +6,7 @@ use crate::style::CursorStyle;
 pub enum Dcs {
     // DECRQSS: <https://vt100.net/docs/vt510-rm/DECRQSS.html>
     Request(DcsRequest),
-    // DECRPSS
+    // DECRPSS: <https://vt100.net/docs/vt510-rm/DECRPSS.html>
     Response {
         is_request_valid: bool,
         value: DcsResponse,
@@ -16,7 +16,7 @@ pub enum Dcs {
 impl Display for Dcs {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         // DCS
-        write!(f, "\x1bP")?;
+        f.write_str(super::DCS)?;
         match self {
             // DCS $ q D...D ST
             Self::Request(request) => write!(f, "$q{request}")?,
@@ -27,7 +27,7 @@ impl Display for Dcs {
             } => write!(f, "{}$r{value}", if *is_request_valid { 1 } else { 0 })?,
         }
         // ST
-        write!(f, "\x1b\\")
+        f.write_str(super::ST)
     }
 }
 

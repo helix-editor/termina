@@ -1,3 +1,7 @@
+// CREDIT: This is basically all crossterm.
+// <https://github.com/crossterm-rs/crossterm/blob/36d95b26a26e64b0f8c12edfe11f410a6d56a812/src/event/stream.rs>
+// I added the dummy stream for integration testing in Helix.
+
 use std::{
     io,
     pin::Pin,

@@ -1,3 +1,9 @@
+// CREDIT: <https://github.com/crossterm-rs/crossterm/blob/36d95b26a26e64b0f8c12edfe11f410a6d56a812/src/event/read.rs>
+// This module provides an `Arc<Mutex<T>>` wrapper around a type which is basically the crossterm
+// `InternalEventReader`. This allows it to live on the Terminal and an EventStream rather than
+// statically.
+// Instead of crossterm's `Filter` trait I have opted for a `Fn(&Event) -> bool` for simplicity.
+
 use std::{collections::VecDeque, io, sync::Arc, time::Duration};
 
 use parking_lot::Mutex;

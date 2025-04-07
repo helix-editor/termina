@@ -9,7 +9,7 @@ Termina only "speaks text/VT" but aims to work on Windows as well as *NIX. This 
 
 API-wise Termina aims to merge the nicer parts of crossterm and termwiz. In particular termwiz's `Drop` behavior for restoring the terminal is a good idea while crossterm's `EventStream` is nice to work with. Termina tries to have a lower level API when it comes to escape sequences, however, which should make it easier to add new sequences in the future.
 
-Termina uses significant chunks of code from both crossterm and termwiz and as such the license may be MIT (or MPL-2.0, at your option). (TODO: add annotations for credit.)
+Termina uses significant chunks of code from both crossterm and termwiz and as such the license may be MIT (or MPL-2.0, at your option).
 
 Currently Crossterm does not support reading VT sequences on Windows while Termwiz does. Termina will bail if the host terminal does not support VT. Note that there are some places where Termina reaches into the Windows Console API. These match Microsoft's recommendation for [exceptions for using Windows Console APIs](https://learn.microsoft.com/en-us/windows/console/classic-vs-vt#exceptions-for-using-windows-console-apis).
 

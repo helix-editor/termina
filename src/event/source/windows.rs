@@ -1,3 +1,8 @@
+// CREDIT: This one is shared between crossterm and termwiz but is mostly termwiz.
+// Termwiz: <https://github.com/wezterm/wezterm/blame/a87358516004a652ad840bc1661bdf65ffc89b43/termwiz/src/terminal/windows.rs#L810-L853>
+// Crossterm: <https://github.com/crossterm-rs/crossterm/blob/36d95b26a26e64b0f8c12edfe11f410a6d56a812/src/event/source/windows.rs>
+// Also see the necessary methods on the handle from the terminal module and the credit comment
+// there.
 use std::{io, os::windows::prelude::*, ptr, sync::Arc, time::Duration};
 
 use windows_sys::Win32::System::Threading;

@@ -1,3 +1,7 @@
+// CREDIT: Most event code is adapted from crossterm. The main difference is that I include escape
+// sequences like CSI and DCS in the `Event` struct and do not make a distinction between
+// `InternalEvent` and `Event`. Otherwise all `KeyEvent` code is nearly identical to crossterm.
+
 use crate::escape::{csi::Csi, dcs::Dcs};
 
 pub(crate) mod reader;
@@ -23,7 +27,6 @@ pub enum Event {
     /// sequence to deliver the entire pasted content.
     Paste(String),
     /// A parsed escape sequence starting with CSI (control sequence introducer).
-    // TODO: generic `Escape` event?
     Csi(Csi),
     Dcs(Dcs),
 }
@@ -35,6 +38,7 @@ impl Event {
     }
 }
 
+// CREDIT: <https://github.com/crossterm-rs/crossterm/blob/36d95b26a26e64b0f8c12edfe11f410a6d56a812/src/event.rs#L777-L1158>
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct KeyEvent {
     pub code: KeyCode,

@@ -1,3 +1,7 @@
+// CREDIT: this is a quite shallow copy of <https://github.com/wezterm/wezterm/blob/a87358516004a652ad840bc1661bdf65ffc89b43/termwiz/src/escape/osc.rs>.
+// I've replaced some macros and the base64 implementation however, as well as make the commands
+// borrow a `str` instead of own a `String`.
+
 use std::fmt::{self, Display};
 
 use crate::base64;

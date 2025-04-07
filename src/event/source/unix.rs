@@ -1,3 +1,8 @@
+// CREDIT: This is mostly a mirror of crossterm `tty` event source adjusted to use rustix
+// exclusively, reaching into parts of the `filedescriptor` dependency (NOTE: which is part of the
+// WezTerm repo) but reimplementing with rustix instead of libc.
+// Crossterm: <https://github.com/crossterm-rs/crossterm/blob/36d95b26a26e64b0f8c12edfe11f410a6d56a812/src/event/source/unix/tty.rs>
+// Termwiz: <https://github.com/wezterm/wezterm/blob/a87358516004a652ad840bc1661bdf65ffc89b43/filedescriptor/src/unix.rs#L444-L584>
 use std::{
     io::{self, Read, Write as _},
     os::{

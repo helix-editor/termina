@@ -22,6 +22,13 @@ pub type PlatformTerminal = UnixTerminal;
 #[cfg(windows)]
 pub type PlatformTerminal = WindowsTerminal;
 
+// CREDIT: This is heavily based on termwiz.
+// <https://github.com/wezterm/wezterm/blob/a87358516004a652ad840bc1661bdf65ffc89b43/termwiz/src/terminal/mod.rs#L50-L111>
+// This trait is simpler, however, and the terminals themselves do not have drop glue or try
+// to enable features like bracketed paste: that is left to dependents of `termina`. The `poll`
+// and `read` functions mirror <https://github.com/crossterm-rs/crossterm/blob/36d95b26a26e64b0f8c12edfe11f410a6d56a812/src/event.rs#L204-L255>.
+// Also see `src/event/reader.rs`.
+
 pub trait Terminal: io::Write {
     /// Enters the "raw" terminal mode.
     ///

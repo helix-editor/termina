@@ -39,6 +39,12 @@ const BUF_SIZE: usize = 128;
 
 type CodePageID = u32;
 
+// CREDIT: Like the Unix terminal module this is mainly based on WezTerm code (except for the
+// event source parts in `src/event/source/windows.rs` which reaches into these functions).
+// <https://github.com/wezterm/wezterm/blob/a87358516004a652ad840bc1661bdf65ffc89b43/filedescriptor/src/windows.rs>
+// This crate however uses `windows-sys` instead of `winapi` and has a slightly different API for
+// the `InputHandle` and `OutputHandle`.
+
 #[derive(Debug)]
 pub(crate) struct InputHandle {
     handle: OwnedHandle,
@@ -258,15 +264,20 @@ fn open_pty() -> io::Result<(InputHandle, OutputHandle)> {
     Ok((input, output))
 }
 
+// CREDIT: Again, like the UnixTerminal in the unix module this is mostly based on WezTerm but
+// only covers the parts not related to the event source.
+// <https://github.com/wezterm/wezterm/blob/a87358516004a652ad840bc1661bdf65ffc89b43/termwiz/src/terminal/windows.rs#L482-L860>
+// Also, the legacy Console API is not implemented.
+
 #[derive(Debug)]
 pub struct WindowsTerminal {
     input: InputHandle,
     output: BufWriter<OutputHandle>,
     reader: EventReader,
-    original_input_mode: u32,
-    original_output_mode: u32,
-    original_input_cp: u32,
-    original_output_cp: u32,
+    original_input_mode: CONSOLE_MODE,
+    original_output_mode: CONSOLE_MODE,
+    original_input_cp: CodePageID,
+    original_output_cp: CodePageID,
 }
 
 impl WindowsTerminal {

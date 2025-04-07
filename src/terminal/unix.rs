@@ -14,6 +14,10 @@ use super::Terminal;
 
 const BUF_SIZE: usize = 4096;
 
+// CREDIT: FileDescriptor stuff is mostly based on the WezTerm crate `filedescriptor` but has been
+// rewritten with `rustix` instead of `libc`.
+// <https://github.com/wezterm/wezterm/blob/a87358516004a652ad840bc1661bdf65ffc89b43/filedescriptor/src/unix.rs>
+
 #[derive(Debug)]
 pub(crate) enum FileDescriptor {
     Owned(OwnedFd),
@@ -79,6 +83,15 @@ fn open_pty() -> io::Result<(FileDescriptor, FileDescriptor)> {
 
     Ok((read, write))
 }
+
+// CREDIT: <https://github.com/wezterm/wezterm/blob/a87358516004a652ad840bc1661bdf65ffc89b43/termwiz/src/terminal/unix.rs>
+// Some discussion, though: Termwiz's terminals combine the terminal interaction (reading
+// dimensions, reading events, writing bytes, etc.) all in one type. Crossterm splits these
+// concerns and I prefer that interface. As such this type is very much based on Termwiz'
+// `UnixTerminal` but the responsibilities are split between this file and
+// `src/event/source/unix.rs` - the latter being more inspired by crossterm.
+// Ultimately this terminal doesn't look much like Termwiz' due to the use of `rustix` and
+// differences in the trait and `Drop` behavior (see `super`'s CREDIT comment).
 
 #[derive(Debug)]
 pub struct UnixTerminal {

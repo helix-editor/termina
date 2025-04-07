@@ -1,3 +1,14 @@
+// CREDIT: This is nearly all crossterm (with modifications and additions).
+// <https://github.com/crossterm-rs/crossterm/blob/36d95b26a26e64b0f8c12edfe11f410a6d56a812/src/event/sys/unix/parse.rs>
+// See a below credit comment about the `decode_input_records` function however.
+// I have extended the parsing functions from
+//
+// Crossterm comments say that the parser is a bit scary and probably in need of a refactor. I
+// like this approach though since it's quite easy to read and test. I'm unsure of the performance
+// though because of the loop in `process_bytes`: we consider the bytes as an increasing slice of
+// the buffer until it becomes valid or invalid. WezTerm and Alacritty have more formal parsers
+// (`vtparse` and `vte`, respectively) but I'm unsure of using a terminal program's parser since
+// it may be larger or more complex than an application needs.
 use std::{collections::VecDeque, num::NonZeroU16, str};
 
 use crate::{
@@ -71,6 +82,11 @@ impl Parser {
     }
 }
 
+// CREDIT: <https://github.com/wezterm/wezterm/blob/a87358516004a652ad840bc1661bdf65ffc89b43/termwiz/src/input.rs#L676-L885>
+// I have dropped the legacy Console API handling however and switched to the `AsciiChar` part of
+// the key record. I suspect that Termwiz may be incorrect here as the Microsoft docs say that the
+// proper way to read UTF-8 is to use the `A` variant (`ReadConsoleInputA` while WezTerm uses
+// `ReadConsoleInputW`) to read a byte.
 #[cfg(windows)]
 mod windows {
     use windows_sys::Win32::System::Console;

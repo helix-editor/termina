@@ -1,3 +1,6 @@
+// CREDIT: This module is mostly based on crossterm's `event-read` example with minor
+// modifications to adapt to the termina API.
+// <https://github.com/crossterm-rs/crossterm/blob/36d95b26a26e64b0f8c12edfe11f410a6d56a812/examples/event-read.rs>
 use std::{
     io::{self, Write as _},
     time::Duration,

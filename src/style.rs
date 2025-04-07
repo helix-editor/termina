@@ -1,5 +1,9 @@
 //! Types for styling terminal cells.
 
+// CREDIT: This is shared almost fairly between crossterm and termwiz. SGR properties like
+// `Underline`, `CursorStyle` and `Intensity` are from termwiz. The `StyleExt` trait is similar
+// to a crossterm trait.
+
 use std::{
     borrow::Cow,
     fmt::{self, Display},

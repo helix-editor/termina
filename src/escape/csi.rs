@@ -1,22 +1,16 @@
-use std::{
-    fmt::{self, Display},
-    num::NonZeroU16,
-};
+// CREDIT: This module was incrementally yanked from
+// <https://github.com/wezterm/wezterm/blob/a87358516004a652ad840bc1661bdf65ffc89b43/termwiz/src/escape/osc.rs>.
+// I've made stylistic changes like eliminating some traits (FromPrimitive, ToPrimitive) and only
+// copied parts - TermWiz has a more complete set of OSC escapes. I have added some new escapes
+// though, for example Contour's theme mode extension in `Mode::QueryTheme` and friends.
+
+use std::fmt::{self, Display};
 
 use crate::{
+    escape::OneBased,
     event::Modifiers,
     style::{Blink, ColorSpec, CursorStyle, Font, Intensity, RgbaColor, Underline, VerticalAlign},
 };
-
-// TODO: keep these consts? Or just document them?
-
-pub const ENTER_ALTERNATE_SCREEN: Csi = Csi::Mode(Mode::SetDecPrivateMode(DecPrivateMode::Code(
-    DecPrivateModeCode::ClearAndEnableAlternateScreen,
-)));
-
-pub const EXIT_ALTERNATE_SCREEN: Csi = Csi::Mode(Mode::ResetDecPrivateMode(DecPrivateMode::Code(
-    DecPrivateModeCode::ClearAndEnableAlternateScreen,
-)));
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Csi {
@@ -403,48 +397,6 @@ pub enum TabulationClear {
 impl Display for TabulationClear {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(f, "{}", *self as u8)
-    }
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct OneBased(NonZeroU16);
-
-impl OneBased {
-    pub const fn new(n: u16) -> Option<Self> {
-        match NonZeroU16::new(n) {
-            Some(n) => Some(Self(n)),
-            None => None,
-        }
-    }
-
-    pub const fn from_zero_based(n: u16) -> Self {
-        Self(unsafe { NonZeroU16::new_unchecked(n + 1) })
-    }
-
-    pub const fn get(self) -> u16 {
-        self.0.get()
-    }
-
-    pub const fn get_zero_based(self) -> u16 {
-        self.get() - 1
-    }
-}
-
-impl Default for OneBased {
-    fn default() -> Self {
-        Self(unsafe { NonZeroU16::new_unchecked(1) })
-    }
-}
-
-impl Display for OneBased {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        self.0.fmt(f)
-    }
-}
-
-impl From<NonZeroU16> for OneBased {
-    fn from(n: NonZeroU16) -> Self {
-        Self(n)
     }
 }
 
@@ -1078,6 +1030,15 @@ impl Display for Device {
 #[cfg(test)]
 mod test {
     use super::*;
+
+    const ENTER_ALTERNATE_SCREEN: Csi = Csi::Mode(Mode::SetDecPrivateMode(DecPrivateMode::Code(
+        DecPrivateModeCode::ClearAndEnableAlternateScreen,
+    )));
+
+    const EXIT_ALTERNATE_SCREEN: Csi = Csi::Mode(Mode::ResetDecPrivateMode(DecPrivateMode::Code(
+        DecPrivateModeCode::ClearAndEnableAlternateScreen,
+    )));
+
     #[test]
     fn encoding() {
         // Enter the alternate screen using the mode part of CSI.

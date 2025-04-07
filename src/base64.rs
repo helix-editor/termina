@@ -1,8 +1,13 @@
+// CREDIT:
 // A minimal base64 implementation to keep from pulling in a crate for just that. It's based on
 // https://github.com/marshallpierce/rust-base64 but without all the customization options.
 // The biggest portion comes from
 // https://github.com/marshallpierce/rust-base64/blob/a675443d327e175f735a37f574de803d6a332591/src/engine/naive.rs#L42
 // Thanks, rust-base64!
+
+// CREDIT: this was yanked from the Helix codebase:
+// <https://github.com/helix-editor/helix/blob/4130b162a7bbc7de739807abc05a0e8ba3712133/helix-view/src/base64.rs>
+// Also see <https://github.com/helix-editor/helix/pull/3220>.
 
 // The MIT License (MIT)
 
