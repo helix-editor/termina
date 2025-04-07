@@ -18,6 +18,21 @@ const HELP: &str = r#"Blocking read()
  - Use Esc to quit
 "#;
 
+macro_rules! decset {
+    ($mode:ident) => {
+        csi::Csi::Mode(csi::Mode::SetDecPrivateMode(csi::DecPrivateMode::Code(
+            csi::DecPrivateModeCode::$mode,
+        )))
+    };
+}
+macro_rules! decreset {
+    ($mode:ident) => {
+        csi::Csi::Mode(csi::Mode::ResetDecPrivateMode(csi::DecPrivateMode::Code(
+            csi::DecPrivateModeCode::$mode,
+        )))
+    };
+}
+
 fn main() -> io::Result<()> {
     println!("{HELP}");
 
@@ -31,27 +46,13 @@ fn main() -> io::Result<()> {
             KittyKeyboardFlags::DISAMBIGUATE_ESCAPE_CODES
                 | KittyKeyboardFlags::REPORT_ALTERNATE_KEYS
         )),
-        csi::Csi::Mode(csi::Mode::SetDecPrivateMode(csi::DecPrivateMode::Code(
-            csi::DecPrivateModeCode::FocusTracking
-        ))),
-        csi::Csi::Mode(csi::Mode::SetDecPrivateMode(csi::DecPrivateMode::Code(
-            csi::DecPrivateModeCode::BracketedPaste
-        ))),
-        csi::Csi::Mode(csi::Mode::SetDecPrivateMode(csi::DecPrivateMode::Code(
-            csi::DecPrivateModeCode::MouseTracking
-        ))),
-        csi::Csi::Mode(csi::Mode::SetDecPrivateMode(csi::DecPrivateMode::Code(
-            csi::DecPrivateModeCode::ButtonEventMouse
-        ))),
-        csi::Csi::Mode(csi::Mode::SetDecPrivateMode(csi::DecPrivateMode::Code(
-            csi::DecPrivateModeCode::AnyEventMouse
-        ))),
-        csi::Csi::Mode(csi::Mode::SetDecPrivateMode(csi::DecPrivateMode::Code(
-            csi::DecPrivateModeCode::RXVTMouse
-        ))),
-        csi::Csi::Mode(csi::Mode::SetDecPrivateMode(csi::DecPrivateMode::Code(
-            csi::DecPrivateModeCode::SGRMouse
-        ))),
+        decset!(FocusTracking),
+        decset!(BracketedPaste),
+        decset!(MouseTracking),
+        decset!(ButtonEventMouse),
+        decset!(AnyEventMouse),
+        decset!(RXVTMouse),
+        decset!(SGRMouse),
     )?;
     terminal.flush()?;
 
@@ -110,28 +111,17 @@ fn main() -> io::Result<()> {
     write!(
         terminal,
         "{}{}{}{}{}{}{}{}",
+        // NOTE: we pop the flags because we did not enter an alternate screen with
+        // `decset!(ClearAndEnableAlternateScreen)`. Entering the main screen would have
+        // automatically popped the Kitty keyboard flags.
         csi::Csi::Keyboard(csi::Keyboard::PopFlags(1)),
-        csi::Csi::Mode(csi::Mode::ResetDecPrivateMode(csi::DecPrivateMode::Code(
-            csi::DecPrivateModeCode::FocusTracking
-        ))),
-        csi::Csi::Mode(csi::Mode::ResetDecPrivateMode(csi::DecPrivateMode::Code(
-            csi::DecPrivateModeCode::BracketedPaste
-        ))),
-        csi::Csi::Mode(csi::Mode::ResetDecPrivateMode(csi::DecPrivateMode::Code(
-            csi::DecPrivateModeCode::MouseTracking
-        ))),
-        csi::Csi::Mode(csi::Mode::ResetDecPrivateMode(csi::DecPrivateMode::Code(
-            csi::DecPrivateModeCode::ButtonEventMouse
-        ))),
-        csi::Csi::Mode(csi::Mode::ResetDecPrivateMode(csi::DecPrivateMode::Code(
-            csi::DecPrivateModeCode::AnyEventMouse
-        ))),
-        csi::Csi::Mode(csi::Mode::ResetDecPrivateMode(csi::DecPrivateMode::Code(
-            csi::DecPrivateModeCode::RXVTMouse
-        ))),
-        csi::Csi::Mode(csi::Mode::ResetDecPrivateMode(csi::DecPrivateMode::Code(
-            csi::DecPrivateModeCode::SGRMouse
-        ))),
+        decreset!(FocusTracking),
+        decreset!(BracketedPaste),
+        decreset!(MouseTracking),
+        decreset!(ButtonEventMouse),
+        decreset!(AnyEventMouse),
+        decreset!(RXVTMouse),
+        decreset!(SGRMouse),
     )?;
 
     terminal.reset_mode()?;
