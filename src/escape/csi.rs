@@ -298,7 +298,7 @@ pub enum Cursor {
         bottom: OneBased,
     },
 
-    /// https://vt100.net/docs/vt510-rm/DECSLRM.html
+    /// <https://vt100.net/docs/vt510-rm/DECSLRM.html>
     SetLeftAndRightMargins {
         left: OneBased,
         right: OneBased,
@@ -490,7 +490,7 @@ pub enum Edit {
     /// presentation position is not affected by this control function.
     ///
     /// Also known as Pan Up in DEC:
-    /// https://vt100.net/docs/vt510-rm/SD.html
+    /// <https://vt100.net/docs/vt510-rm/SD.html>
     ScrollDown(u32),
 
     /// SU - SCROLL UP
@@ -631,43 +631,43 @@ impl Display for DecPrivateMode {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum DecPrivateModeCode {
-    /// https://vt100.net/docs/vt510-rm/DECCKM.html
+    /// <https://vt100.net/docs/vt510-rm/DECCKM.html>
     /// This mode is only effective when the terminal is in keypad application mode (see DECKPAM)
     /// and the ANSI/VT52 mode (DECANM) is set (see DECANM). Under these conditions, if the cursor
     /// key mode is reset, the four cursor function keys will send ANSI cursor control commands. If
     /// cursor key mode is set, the four cursor function keys will send application functions.
     ApplicationCursorKeys = 1,
 
-    /// https://vt100.net/docs/vt510-rm/DECANM.html
+    /// <https://vt100.net/docs/vt510-rm/DECANM.html>
     /// Behave like a vt52
     DecAnsiMode = 2,
 
-    /// https://vt100.net/docs/vt510-rm/DECCOLM.html
+    /// <https://vt100.net/docs/vt510-rm/DECCOLM.html>
     Select132Columns = 3,
-    /// https://vt100.net/docs/vt510-rm/DECSCLM.html
+    /// <https://vt100.net/docs/vt510-rm/DECSCLM.html>
     SmoothScroll = 4,
-    /// https://vt100.net/docs/vt510-rm/DECSCNM.html
+    /// <https://vt100.net/docs/vt510-rm/DECSCNM.html>
     ReverseVideo = 5,
-    /// https://vt100.net/docs/vt510-rm/DECOM.html
+    /// <https://vt100.net/docs/vt510-rm/DECOM.html>
     /// When OriginMode is enabled, cursor is constrained to the
     /// scroll region and its position is relative to the scroll
     /// region.
     OriginMode = 6,
-    /// https://vt100.net/docs/vt510-rm/DECAWM.html
+    /// <https://vt100.net/docs/vt510-rm/DECAWM.html>
     /// When enabled, wrap to next line, Otherwise replace the last
     /// character
     AutoWrap = 7,
-    /// https://vt100.net/docs/vt510-rm/DECARM.html
+    /// <https://vt100.net/docs/vt510-rm/DECARM.html>
     AutoRepeat = 8,
     StartBlinkingCursor = 12,
     ShowCursor = 25,
 
     ReverseWraparound = 45,
 
-    /// https://vt100.net/docs/vt510-rm/DECLRMM.html
+    /// <https://vt100.net/docs/vt510-rm/DECLRMM.html>
     LeftRightMarginMode = 69,
 
-    /// DECSDM - https://vt100.net/dec/ek-vt38t-ug-001.pdf#page=132
+    /// DECSDM - <https://vt100.net/dec/ek-vt38t-ug-001.pdf#page=132>
     SixelDisplayMode = 80,
     /// Enable mouse button press/release reporting
     MouseTracking = 1000,
@@ -742,16 +742,16 @@ impl Display for TerminalMode {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum TerminalModeCode {
-    /// https://vt100.net/docs/vt510-rm/KAM.html
+    /// <https://vt100.net/docs/vt510-rm/KAM.html>
     KeyboardAction = 2,
-    /// https://vt100.net/docs/vt510-rm/IRM.html
+    /// <https://vt100.net/docs/vt510-rm/IRM.html>
     Insert = 4,
-    /// <https://terminal-wg.pages.freedesktop.org/bidi/recommendation/escape-sequences.html>
+    /// <<https://terminal-wg.pages.freedesktop.org/bidi/recommendation/escape-sequences.html>>
     BiDirectionalSupportMode = 8,
-    /// https://vt100.net/docs/vt510-rm/SRM.html
+    /// <https://vt100.net/docs/vt510-rm/SRM.html>
     /// But in the MS terminal this is cursor blinking.
     SendReceive = 12,
-    /// https://vt100.net/docs/vt510-rm/LNM.html
+    /// <https://vt100.net/docs/vt510-rm/LNM.html>
     AutomaticNewline = 20,
     /// MS terminal cursor visibility
     ShowCursor = 25,
@@ -958,9 +958,9 @@ pub enum Keyboard {
     ///
     /// Also see [SetKeyboardFlagsMode].
     ///
-    /// Applications such as editors which enter the alternate screen
-    /// [crate::Terminal::enter_alternate_screen] should prefer `PushFlags` because the flags
-    /// will be automatically dropped by the terminal when entering the main screen.
+    /// Applications such as editors which enter the alternate screen with
+    /// [DecPrivateModeCode::ClearAndEnableAlternateScreen] should prefer `PushFlags` because the
+    /// flags will be automatically dropped by the terminal when entering the main screen.
     SetFlags {
         flags: KittyKeyboardFlags,
         mode: SetKeyboardFlagsMode,
@@ -1000,14 +1000,14 @@ impl Display for SetKeyboardFlagsMode {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Device {
     DeviceAttributes(()),
-    /// DECSTR - https://vt100.net/docs/vt510-rm/DECSTR.html
+    /// DECSTR - <https://vt100.net/docs/vt510-rm/DECSTR.html>
     SoftReset,
     RequestPrimaryDeviceAttributes,
     RequestSecondaryDeviceAttributes,
     RequestTertiaryDeviceAttributes,
     StatusReport,
-    /// https://github.com/mintty/mintty/issues/881
-    /// https://gitlab.gnome.org/GNOME/vte/-/issues/235
+    /// <https://github.com/mintty/mintty/issues/881>
+    /// <https://gitlab.gnome.org/GNOME/vte/-/issues/235>
     RequestTerminalNameAndVersion,
     RequestTerminalParameters(i64),
 }
