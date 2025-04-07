@@ -6,8 +6,7 @@ use termina::{
         dcs::{self, Dcs},
     },
     style::RgbColor,
-    terminal::{PlatformTerminal, Terminal},
-    Event,
+    Event, PlatformTerminal, Terminal,
 };
 
 const TEST_COLOR: RgbColor = RgbColor::new(150, 150, 150);

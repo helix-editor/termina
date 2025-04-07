@@ -6,8 +6,7 @@ use std::{
 use termina::{
     escape::csi::{self, KittyKeyboardFlags},
     event::{KeyCode, KeyEvent},
-    terminal::{PlatformTerminal, Terminal},
-    Event,
+    Event, PlatformTerminal, Terminal,
 };
 
 const HELP: &str = r#"Blocking read()
