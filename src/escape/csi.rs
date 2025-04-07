@@ -38,7 +38,7 @@ impl Display for Csi {
         // This here is the "control sequence introducer" (CSI):
         write!(f, "\x1b[")?;
         match self {
-            Self::Sgr(sgr) => sgr.fmt(f),
+            Self::Sgr(sgr) => write!(f, "{sgr}m"),
             Self::Cursor(cursor) => cursor.fmt(f),
             Self::Edit(edit) => edit.fmt(f),
             Self::Mode(mode) => mode.fmt(f),
@@ -171,7 +171,7 @@ impl Display for Sgr {
                 write_true_color(58, *color, f)?;
             }
         }
-        write!(f, "m")
+        Ok(())
     }
 }
 

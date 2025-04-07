@@ -1,5 +1,16 @@
 //! Types for styling terminal cells.
 
+use std::{
+    borrow::Cow,
+    fmt::{self, Display},
+    sync::atomic::{AtomicBool, Ordering},
+};
+
+use crate::escape::{
+    self,
+    csi::{Csi, Sgr},
+};
+
 /// Styling of a cell's underline.
 #[derive(Debug, Default, Clone, Copy, PartialEq, Eq)]
 // <https://sw.kovidgoyal.net/kitty/underlines/>
@@ -188,30 +199,136 @@ pub enum VerticalAlign {
     SubScript = 2,
 }
 
-/*
-mod representation {
-    use std::{fmt, num::NonZeroU32};
+/// A helper type for conveniently rendering styled content to the terminal.
+///
+/// This is meant to be used instead of `PlatformTerminal` and proper CSI SGR codes when printing
+/// basic text, for example a CLI's help string.
+///
+/// Instead of using this type directly, `use` the `StyleExt` trait and the helper functions
+/// attached to strings:
+///
+/// ```
+/// use termina::style::StyleExt as _;
+/// assert_eq!("green".green().to_string(), "\x1b[0;32mgreen\x1b[0m");
+/// ```
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Stylized<'a> {
+    pub content: Cow<'a, str>,
+    styles: Vec<Sgr>,
+}
 
-    #[derive(Clone, Copy, PartialEq, Eq)]
-    pub(super) struct NonMaxU32(NonZeroU32);
+static INITIALIZER: parking_lot::Once = parking_lot::Once::new();
+static NO_COLOR: AtomicBool = AtomicBool::new(false);
 
-    impl NonMaxU32 {
-        pub const fn new(val: u32) -> Option<Self> {
-            match NonZeroU32::new(val ^ u32::MAX) {
-                Some(nonzero) => Some(Self(nonzero)),
-                None => None,
-            }
-        }
-
-        pub const fn get(&self) -> u32 {
-            self.0.get() ^ u32::MAX
-        }
+impl Stylized<'_> {
+    /// Checks whether ANSI color sequences where turned off in the environment.
+    ///
+    /// See <https://no-color.org/>: if the `NO_COLOR` environment variable is present and
+    /// non-empty, color escape sequences will be omitted when rendering this struct. This
+    /// behavior can be overridden with [Self::force_ansi_color].
+    pub fn is_ansi_color_disabled() -> bool {
+        // <https://no-color.org/>
+        INITIALIZER.call_once(|| {
+            NO_COLOR.store(
+                std::env::var("NO_COLOR").is_ok_and(|e| !e.is_empty()),
+                Ordering::SeqCst,
+            );
+        });
+        NO_COLOR.load(Ordering::SeqCst)
     }
 
-    impl fmt::Debug for NonMaxU32 {
-        fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-            f.debug_tuple("NonMaxU32").field(&self.get()).finish()
+    /// Overrides detection of the `NO_COLOR` environment variable.
+    ///
+    /// Pass `true` to ensure that ANSI color codes are always included when displaying this type
+    /// or `false` to ensure ANSI color codes are never included.
+    pub fn force_ansi_color(enable_color: bool) {
+        // Run the `Once` first so this override is not later overwritten by the `Once` fn.
+        let _ = Self::is_ansi_color_disabled();
+        NO_COLOR.store(!enable_color, Ordering::SeqCst);
+    }
+}
+
+impl Display for Stylized<'_> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let no_color = Self::is_ansi_color_disabled();
+        let mut styles = self
+            .styles
+            .iter()
+            .filter(|sgr| {
+                !(no_color
+                    && matches!(
+                        sgr,
+                        Sgr::Foreground(_) | Sgr::Background(_) | Sgr::UnderlineColor(_)
+                    ))
+            })
+            .peekable();
+
+        if styles.peek().is_none() {
+            write!(f, "{}", self.content)?;
+        } else {
+            write!(f, "{}0", escape::CSI)?;
+            for sgr in styles {
+                write!(f, ";{sgr}")?;
+            }
+            write!(f, "m{}{}", self.content, Csi::Sgr(Sgr::Reset))?;
+        }
+        Ok(())
+    }
+}
+
+pub trait StyleExt<'a>: Sized {
+    fn stylized(self) -> Stylized<'a>;
+
+    fn foreground(self, color: impl Into<ColorSpec>) -> Stylized<'a> {
+        let mut this = self.stylized();
+        this.styles.push(Sgr::Foreground(color.into()));
+        this
+    }
+    fn red(self) -> Stylized<'a> {
+        self.foreground(ColorSpec::RED)
+    }
+    fn yellow(self) -> Stylized<'a> {
+        self.foreground(ColorSpec::YELLOW)
+    }
+    fn green(self) -> Stylized<'a> {
+        self.foreground(ColorSpec::GREEN)
+    }
+    fn underlined(self) -> Stylized<'a> {
+        let mut this = self.stylized();
+        this.styles.push(Sgr::Underline(Underline::Single));
+        this
+    }
+    fn bold(self) -> Stylized<'a> {
+        let mut this = self.stylized();
+        this.styles.push(Sgr::Intensity(Intensity::Bold));
+        this
+    }
+}
+
+impl<'a> StyleExt<'a> for Cow<'a, str> {
+    fn stylized(self) -> Stylized<'a> {
+        Stylized {
+            content: self,
+            styles: Vec::with_capacity(2),
         }
     }
 }
-*/
+
+impl<'a> StyleExt<'a> for &'a str {
+    fn stylized(self) -> Stylized<'a> {
+        Cow::Borrowed(self).stylized()
+    }
+}
+
+impl StyleExt<'static> for String {
+    fn stylized(self) -> Stylized<'static> {
+        Cow::<str>::Owned(self).stylized()
+    }
+}
+
+// NOTE: this allows chaining like `"hello".green().bold()`.
+impl<'a> StyleExt<'a> for Stylized<'a> {
+    fn stylized(self) -> Stylized<'a> {
+        self
+    }
+}
