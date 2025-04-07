@@ -20,7 +20,7 @@ use windows_sys::Win32::{
 };
 
 use crate::{
-    event::{reader::InternalEventReader, source::WindowsEventSource},
+    event::{reader::EventReader, source::WindowsEventSource},
     Event, EventStream,
 };
 
@@ -196,7 +196,7 @@ impl OutputHandle {
         Ok(())
     }
 
-    fn get_dimensions(&mut self) -> io::Result<(u16, u16)> {
+    fn get_dimensions(&self) -> io::Result<(u16, u16)> {
         let mut info: CONSOLE_SCREEN_BUFFER_INFO = unsafe { mem::zeroed() };
         if unsafe { GetConsoleScreenBufferInfo(self.as_raw_handle(), &mut info) } == 0 {
             bail!(
@@ -262,7 +262,7 @@ fn open_pty() -> io::Result<(InputHandle, OutputHandle)> {
 pub struct WindowsTerminal {
     input: InputHandle,
     output: BufWriter<OutputHandle>,
-    reader: InternalEventReader,
+    reader: EventReader,
     original_input_mode: u32,
     original_output_mode: u32,
     original_input_cp: u32,
@@ -293,7 +293,7 @@ impl WindowsTerminal {
             bail!("virtual terminal processing could not be enabled for the input handle");
         }
 
-        let reader = InternalEventReader::new(WindowsEventSource::new(input.try_clone()?)?);
+        let reader = EventReader::new(WindowsEventSource::new(input.try_clone()?)?);
 
         Ok(Self {
             input,
@@ -304,22 +304,6 @@ impl WindowsTerminal {
             original_input_cp,
             original_output_cp,
         })
-    }
-}
-
-impl Drop for WindowsTerminal {
-    fn drop(&mut self) {
-        self.output.flush().unwrap();
-        self.input.set_mode(self.original_input_mode).unwrap();
-        self.output
-            .get_mut()
-            .set_mode(self.original_output_mode)
-            .unwrap();
-        self.input.set_code_page(self.original_input_cp).unwrap();
-        self.output
-            .get_mut()
-            .set_code_page(self.original_output_cp)
-            .unwrap();
     }
 }
 
@@ -360,10 +344,21 @@ impl Terminal for WindowsTerminal {
         Ok(())
     }
 
-    fn get_dimensions(&mut self) -> io::Result<(u16, u16)> {
+    fn reset_mode(&mut self) -> io::Result<()> {
+        self.output.flush()?;
+        self.input.set_mode(self.original_input_mode)?;
+        self.output.get_mut().set_mode(self.original_output_mode)?;
+        self.input.set_code_page(self.original_input_cp)?;
+        self.output
+            .get_mut()
+            .set_code_page(self.original_output_cp)?;
+        Ok(())
+    }
+
+    fn get_dimensions(&self) -> io::Result<(u16, u16)> {
         // NOTE: setting dimensions should be done by VT instead of `SetConsoleScreenBufferInfo`.
         // <https://learn.microsoft.com/en-us/windows/console/console-virtual-terminal-sequences#window-width>
-        self.output.get_mut().get_dimensions()
+        self.output.get_ref().get_dimensions()
     }
 
     fn event_stream<F: Fn(&Event) -> bool + Clone + Send + Sync + 'static>(

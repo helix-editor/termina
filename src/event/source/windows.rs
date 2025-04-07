@@ -2,7 +2,7 @@ use std::{io, os::windows::prelude::*, ptr, sync::Arc, time::Duration};
 
 use windows_sys::Win32::System::Threading;
 
-use crate::{event::InternalEvent, parse::Parser, terminal::InputHandle};
+use crate::{event::Event, parse::Parser, terminal::InputHandle};
 
 use super::{EventSource, PollTimeout};
 
@@ -30,7 +30,7 @@ impl EventSource for WindowsEventSource {
         }
     }
 
-    fn try_read(&mut self, timeout: Option<Duration>) -> io::Result<Option<InternalEvent>> {
+    fn try_read(&mut self, timeout: Option<Duration>) -> io::Result<Option<Event>> {
         use windows_sys::Win32::Foundation::{WAIT_FAILED, WAIT_OBJECT_0};
         use Threading::{WaitForMultipleObjects, INFINITE};
 
