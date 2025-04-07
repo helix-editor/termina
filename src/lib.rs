@@ -5,5 +5,8 @@ pub(crate) mod parse;
 pub mod style;
 mod terminal;
 
-pub use event::{stream::EventStream, Event};
+pub use event::{
+    stream::{DummyEventStream, EventStream},
+    Event,
+};
 pub use terminal::{PlatformTerminal, Terminal};
