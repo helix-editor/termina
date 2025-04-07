@@ -51,9 +51,12 @@ fn main() -> io::Result<()> {
             }
             Event::Csi(Csi::Mode(csi::Mode::ReportDecPrivateMode {
                 mode: csi::DecPrivateMode::Code(csi::DecPrivateModeCode::SynchronizedOutput),
-                setting: csi::DecModeSetting::Set | csi::DecModeSetting::Reset,
+                setting,
             })) => {
-                features.sychronized_output = true;
+                features.sychronized_output = matches!(
+                    setting,
+                    csi::DecModeSetting::Set | csi::DecModeSetting::Reset
+                );
             }
             Event::Dcs(Dcs::Response {
                 value: dcs::DcsResponse::GraphicRendition(sgrs),
