@@ -115,9 +115,6 @@ impl Terminal for UnixTerminal {
             &termios,
         )?;
 
-        // TODO: enable bracketed paste, mouse capture, etc..? Or let the consuming application do
-        // so?
-
         Ok(())
     }
 
