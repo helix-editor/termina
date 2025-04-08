@@ -2,7 +2,8 @@
 // <https://github.com/wezterm/wezterm/blob/a87358516004a652ad840bc1661bdf65ffc89b43/termwiz/src/escape/osc.rs>.
 // I've made stylistic changes like eliminating some traits (FromPrimitive, ToPrimitive) and only
 // copied parts - TermWiz has a more complete set of OSC escapes. I have added some new escapes
-// though, for example Contour's theme mode extension in `Mode::QueryTheme` and friends.
+// though, for example Contour's theme mode extension in `Mode::QueryTheme` and friends and the
+// `Sgr::Attributes` / `SgrAttributes` / `SgrModifiers` types.
 
 use std::fmt::{self, Display};
 
@@ -59,6 +60,8 @@ pub enum Sgr {
     Foreground(ColorSpec),
     Background(ColorSpec),
     UnderlineColor(ColorSpec),
+    /// A helper type that can combine sequences into a single SGR update.
+    Attributes(SgrAttributes),
 }
 
 impl Display for Sgr {
@@ -162,8 +165,168 @@ impl Display for Sgr {
             Self::UnderlineColor(ColorSpec::TrueColor(color)) => {
                 write_true_color(58, *color, f)?;
             }
+            Self::Attributes(attributes) => {
+                use SgrModifiers as Mod;
+
+                let mut first = true;
+                let mut write = |sgr: Self| {
+                    if !first {
+                        f.write_str(";")?;
+                    }
+                    first = false;
+                    write!(f, "{sgr}")
+                };
+                if attributes.modifiers.contains(Mod::RESET) {
+                    write(Self::Reset)?;
+                }
+                if let Some(color) = attributes.foreground {
+                    write(Self::Foreground(color))?;
+                }
+                if let Some(color) = attributes.background {
+                    write(Self::Background(color))?;
+                }
+                if let Some(color) = attributes.underline_color {
+                    write(Self::UnderlineColor(color))?;
+                }
+                if attributes.modifiers.contains(Mod::INTENSITY_NORMAL) {
+                    write(Self::Intensity(Intensity::Normal))?;
+                }
+                if attributes.modifiers.contains(Mod::INTENSITY_DIM) {
+                    write(Self::Intensity(Intensity::Dim))?;
+                }
+                if attributes.modifiers.contains(Mod::INTENSITY_BOLD) {
+                    write(Self::Intensity(Intensity::Bold))?;
+                }
+                if attributes.modifiers.contains(Mod::UNDERLINE_NONE) {
+                    write(Self::Underline(Underline::None))?;
+                }
+                if attributes.modifiers.contains(Mod::UNDERLINE_SINGLE) {
+                    write(Self::Underline(Underline::Single))?;
+                }
+                if attributes.modifiers.contains(Mod::UNDERLINE_DOUBLE) {
+                    write(Self::Underline(Underline::Double))?;
+                }
+                if attributes.modifiers.contains(Mod::UNDERLINE_CURLY) {
+                    write(Self::Underline(Underline::Curly))?;
+                }
+                if attributes.modifiers.contains(Mod::UNDERLINE_DOTTED) {
+                    write(Self::Underline(Underline::Dotted))?;
+                }
+                if attributes.modifiers.contains(Mod::UNDERLINE_DASHED) {
+                    write(Self::Underline(Underline::Dashed))?;
+                }
+                if attributes.modifiers.contains(Mod::BLINK_NONE) {
+                    write(Self::Blink(Blink::None))?;
+                }
+                if attributes.modifiers.contains(Mod::BLINK_SLOW) {
+                    write(Self::Blink(Blink::Slow))?;
+                }
+                if attributes.modifiers.contains(Mod::BLINK_RAPID) {
+                    write(Self::Blink(Blink::Rapid))?;
+                }
+                if attributes.modifiers.contains(Mod::ITALIC) {
+                    write(Self::Italic(true))?;
+                }
+                if attributes.modifiers.contains(Mod::NO_ITALIC) {
+                    write(Self::Italic(false))?;
+                }
+                if attributes.modifiers.contains(Mod::REVERSE) {
+                    write(Self::Reverse(true))?;
+                }
+                if attributes.modifiers.contains(Mod::NO_REVERSE) {
+                    write(Self::Reverse(false))?;
+                }
+                if attributes.modifiers.contains(Mod::INVISIBLE) {
+                    write(Self::Invisible(true))?;
+                }
+                if attributes.modifiers.contains(Mod::NO_INVISIBLE) {
+                    write(Self::Invisible(false))?;
+                }
+                if attributes.modifiers.contains(Mod::STRIKE_THROUGH) {
+                    write(Self::StrikeThrough(true))?;
+                }
+                if attributes.modifiers.contains(Mod::NO_STRIKE_THROUGH) {
+                    write(Self::StrikeThrough(false))?;
+                }
+            }
         }
         Ok(())
+    }
+}
+
+/// A helper type which can contain multiple common SGR attributes.
+///
+/// This can be used to emit a single SGR escape sequence which updates multiple attributes, for
+/// example setting the foreground and background color at the same time. This is useful to reduce
+/// the total number of bytes needed to describe multiple SGR changes, giving the terminal less
+/// work to do in terms of parsing.
+///
+/// Note that if no attributes are set (`SgrAttributes::default`) the terminal will treat the
+/// escape the same as `Sgr::Reset`. So if you are using this type you may wish to compare the
+/// attributes you've built with `SgrAttributes::default()` to decide whether or not you want to
+/// write it to the terminal. Otherwise the escape codes for this type do not reset SGR. The
+/// example below sets a green foreground and bold intensity but would not affect any other SGR
+/// settings like underline or background color.
+///
+/// ```
+/// # use termina::escape::csi::{Csi, Sgr, SgrAttributes, SgrModifiers};
+/// # use termina::style::{ColorSpec, Intensity};
+/// let attributes = SgrAttributes {
+///     foreground: Some(ColorSpec::GREEN),
+///     modifiers: SgrModifiers::INTENSITY_BOLD,
+///     ..Default::default()
+/// };
+/// // Both SGR codes are in one CSI escape.
+/// assert_eq!(Csi::Sgr(Sgr::Attributes(attributes)).to_string(), "\x1b[32;1m");
+/// // Compare to emitting them separately:
+/// assert_eq!(Csi::Sgr(Sgr::Foreground(ColorSpec::GREEN)).to_string(), "\x1b[32m");
+/// assert_eq!(Csi::Sgr(Sgr::Intensity(Intensity::Bold)).to_string(), "\x1b[1m");
+/// ```
+#[derive(Debug, Default, Clone, Copy, PartialEq, Eq)]
+// > You can use more than one Ps value to select different character attributes.
+// <https://vt100.net/docs/vt510-rm/SGR>
+pub struct SgrAttributes {
+    pub foreground: Option<ColorSpec>,
+    pub background: Option<ColorSpec>,
+    pub underline_color: Option<ColorSpec>,
+    pub modifiers: SgrModifiers,
+}
+
+// We could represent `SgrAttributes` as a `Vec<Sgr>` but we can flatten the type out to have a
+// more compact representation with bitflags for each SGR instead:
+bitflags::bitflags! {
+    #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+    pub struct SgrModifiers: u32 {
+        const NONE = 0;
+        const RESET = 1 << 1;
+        const INTENSITY_NORMAL = 1 << 2;
+        const INTENSITY_DIM = 1 << 3;
+        const INTENSITY_BOLD = 1 << 4;
+        const UNDERLINE_NONE = 1 << 5;
+        const UNDERLINE_SINGLE = 1 << 6;
+        const UNDERLINE_DOUBLE = 1 << 7;
+        const UNDERLINE_CURLY = 1 << 8;
+        const UNDERLINE_DOTTED = 1 << 9;
+        const UNDERLINE_DASHED = 1 << 10;
+        const BLINK_NONE = 1 << 11;
+        const BLINK_SLOW = 1 << 12;
+        const BLINK_RAPID = 1 << 13;
+        const ITALIC = 1 << 14;
+        const NO_ITALIC = 1 << 15;
+        const REVERSE = 1 << 16;
+        const NO_REVERSE = 1 << 17;
+        const INVISIBLE = 1 << 18;
+        const NO_INVISIBLE = 1 << 19;
+        const STRIKE_THROUGH = 1 << 20;
+        const NO_STRIKE_THROUGH = 1 << 21;
+        // Support font and vertical align? They're not well supported in terminals so I think
+        // it's fine to leave them out of this type.
+    }
+}
+
+impl Default for SgrModifiers {
+    fn default() -> Self {
+        Self::NONE
     }
 }
 
