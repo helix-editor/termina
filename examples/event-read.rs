@@ -58,7 +58,7 @@ fn main() -> io::Result<()> {
 
     let mut size = terminal.get_dimensions()?;
     loop {
-        let event = terminal.read(|event| !matches!(event, Event::Csi(_)))?;
+        let event = terminal.read(|event| !event.is_escape())?;
 
         println!("Event: {event:?}\r");
 
@@ -111,9 +111,6 @@ fn main() -> io::Result<()> {
     write!(
         terminal,
         "{}{}{}{}{}{}{}{}",
-        // NOTE: we pop the flags because we did not enter an alternate screen with
-        // `decset!(ClearAndEnableAlternateScreen)`. Entering the main screen would have
-        // automatically popped the Kitty keyboard flags.
         csi::Csi::Keyboard(csi::Keyboard::PopFlags(1)),
         decreset!(FocusTracking),
         decreset!(BracketedPaste),
