@@ -231,7 +231,7 @@ pub enum VerticalAlign {
 ///
 /// ```
 /// use termina::style::StyleExt as _;
-/// assert_eq!("green".green().to_string(), "\x1b[0;32mgreen\x1b[0m");
+/// assert_eq!("green".green().to_string(), "\x1b[0;32mgreen\x1b[m");
 /// ```
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Stylized<'a> {

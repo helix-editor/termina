@@ -85,7 +85,9 @@ impl Display for Sgr {
 
         // CSI <n> m
         match self {
-            Self::Reset => write!(f, "0")?,
+            // The proper thing to do here is `write!(f, "0")?`. By default though when no Ps
+            // is specified the terminal defaults to 0, so we can save a byte here.
+            Self::Reset => (),
             Self::Intensity(Intensity::Normal) => write!(f, "22")?,
             Self::Intensity(Intensity::Bold) => write!(f, "1")?,
             Self::Intensity(Intensity::Dim) => write!(f, "2")?,
@@ -290,6 +292,35 @@ pub struct SgrAttributes {
     pub background: Option<ColorSpec>,
     pub underline_color: Option<ColorSpec>,
     pub modifiers: SgrModifiers,
+}
+
+impl SgrAttributes {
+    /// Returns `true` if no attributes are set, `false` otherwise.
+    ///
+    /// When empty attributes are displayed they produce the same escape sequence as `Sgr::Reset`.
+    /// If you are building attributes incrementally starting with `SgrAttributes::default()` then
+    /// you may wish to check whether the attributes are empty to decide whether or not you should
+    /// write them to the terminal.
+    ///
+    /// ```
+    /// # use termina::escape::csi::{Csi, Sgr, SgrAttributes, SgrModifiers};
+    /// let mut attributes = SgrAttributes::default();
+    /// assert!(attributes.is_empty());
+    /// assert_eq!(
+    ///     Csi::Sgr(Sgr::Reset).to_string(),
+    ///     Csi::Sgr(Sgr::Attributes(attributes)).to_string(),
+    /// );
+    ///
+    /// attributes.modifiers |= SgrModifiers::ITALIC;
+    /// assert!(!attributes.is_empty());
+    /// ```
+    #[inline]
+    pub fn is_empty(&self) -> bool {
+        self.foreground.is_none()
+            && self.background.is_none()
+            && self.underline_color.is_none()
+            && self.modifiers.is_empty()
+    }
 }
 
 // We could represent `SgrAttributes` as a `Vec<Sgr>` but we can flatten the type out to have a
