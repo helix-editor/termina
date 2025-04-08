@@ -392,6 +392,13 @@ impl Terminal for WindowsTerminal {
     }
 }
 
+impl Drop for WindowsTerminal {
+    fn drop(&mut self) {
+        let _ = self.flush();
+        let _ = self.reset_mode();
+    }
+}
+
 impl io::Write for WindowsTerminal {
     fn write(&mut self, buf: &[u8]) -> io::Result<usize> {
         self.output.write(buf)

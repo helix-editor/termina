@@ -1,7 +1,7 @@
 use rustix::termios::{self, Termios};
 use std::{
     fs,
-    io::{self, BufWriter, IsTerminal as _},
+    io::{self, BufWriter, IsTerminal as _, Write as _},
     os::unix::prelude::*,
 };
 
@@ -141,12 +141,8 @@ impl Terminal for UnixTerminal {
     }
 
     fn reset_mode(&mut self) -> io::Result<()> {
-        termios::tcsetattr(
-            self.write.get_ref(),
-            termios::OptionalActions::Now,
-            &self.original_termios,
-        )?;
-        Ok(())
+        // NOTE: this is the same as entering cooked mode on Unix but involves more on Windows.
+        self.enter_cooked_mode()
     }
 
     fn get_dimensions(&self) -> io::Result<(u16, u16)> {
@@ -171,6 +167,13 @@ impl Terminal for UnixTerminal {
 
     fn read<F: Fn(&Event) -> bool>(&self, filter: F) -> io::Result<Event> {
         self.reader.read(filter)
+    }
+}
+
+impl Drop for UnixTerminal {
+    fn drop(&mut self) {
+        let _ = self.flush();
+        let _ = self.reset_mode();
     }
 }
 

@@ -124,8 +124,6 @@ fn main() -> io::Result<()> {
         decreset!(SGRMouse),
     )?;
 
-    terminal.reset_mode()?;
-
     Ok(())
 }
 

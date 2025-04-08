@@ -70,7 +70,6 @@ fn main() -> io::Result<()> {
             other => eprintln!("unexpected event: {other:?}\r"),
         }
     }
-    terminal.reset_mode()?;
     println!("Detected features: {features:?}");
 
     Ok(())
