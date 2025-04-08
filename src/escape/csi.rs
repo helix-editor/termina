@@ -1136,8 +1136,11 @@ impl Display for KittyKeyboardFlags {
 ///
 /// Note that the Kitty Keyboard Protocol requires terminals to maintain different stacks for the
 /// main and alternate screens. This means that applications which use alternate screens do not
-/// need to pop flags (via `Self::PopFlags`) when exiting. By exiting entering the main screen the
-/// flags must be automatically reset by the terminal.
+/// necessarily need to pop flags (via `Self::PopFlags`) when exiting. By entering the main screen
+/// the flags must be automatically reset by the terminal. Any flags which were pushed, however,
+/// will remain active in the alternate screen, even if the alternate screen is entered by a
+/// different application. So generally you should use `Self::PopFlags` when shutting down your
+/// application.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Keyboard {
     /// Query the current values of the flags.
@@ -1151,10 +1154,6 @@ pub enum Keyboard {
     /// Requests keyboard enhancement with the given flags according to the mode.
     ///
     /// Also see [SetKeyboardFlagsMode].
-    ///
-    /// Applications such as editors which enter the alternate screen with
-    /// [DecPrivateModeCode::ClearAndEnableAlternateScreen] should prefer `PushFlags` because the
-    /// flags will be automatically dropped by the terminal when entering the main screen.
     SetFlags {
         flags: KittyKeyboardFlags,
         mode: SetKeyboardFlagsMode,
