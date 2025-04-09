@@ -6,9 +6,12 @@ use std::fmt::{self, Display};
 
 use crate::base64;
 
-#[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Osc<'a> {
+    SetIconNameAndWindowTitle(&'a str),
     SetWindowTitle(&'a str),
+    SetWindowTitleSun(&'a str),
+    SetIconName(&'a str),
+    SetIconNameSun(&'a str),
     ClearSelection(Selection),
     QuerySelection(Selection),
     SetSelection(Selection, &'a str),
@@ -19,7 +22,11 @@ impl Display for Osc<'_> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.write_str(super::OSC)?;
         match self {
-            Self::SetWindowTitle(title) => write!(f, "2;{title}")?,
+            Self::SetIconNameAndWindowTitle(s) => write!(f, "0;{s}")?,
+            Self::SetWindowTitle(s) => write!(f, "2;{s}")?,
+            Self::SetWindowTitleSun(s) => write!(f, "l{s}")?,
+            Self::SetIconName(s) => write!(f, "1;{s}")?,
+            Self::SetIconNameSun(s) => write!(f, "L{s}")?,
             Self::ClearSelection(selection) => write!(f, "52;{selection}")?,
             Self::QuerySelection(selection) => write!(f, "52;{selection};?")?,
             Self::SetSelection(selection, content) => {

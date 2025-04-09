@@ -24,7 +24,7 @@ pub enum Csi {
     Mouse(MouseReport),
     Keyboard(Keyboard),
     Device(Device),
-    // TODO: Window(Box<Window>),
+    Window(Box<Window>),
 }
 
 impl Display for Csi {
@@ -39,6 +39,7 @@ impl Display for Csi {
             Self::Mouse(report) => report.fmt(f),
             Self::Keyboard(keyboard) => keyboard.fmt(f),
             Self::Device(device) => device.fmt(f),
+            Self::Window(window) => window.fmt(f),
         }
     }
 }
@@ -1220,6 +1221,133 @@ impl Display for Device {
     }
 }
 
+// Window
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum Window {
+    DeIconify,
+    Iconify,
+    MoveWindow {
+        x: i64,
+        y: i64,
+    },
+    ResizeWindowPixels {
+        width: Option<i64>,
+        height: Option<i64>,
+    },
+    RaiseWindow,
+    LowerWindow,
+    RefreshWindow,
+    ResizeWindowCells {
+        width: Option<i64>,
+        height: Option<i64>,
+    },
+    RestoreMaximizedWindow,
+    MaximizeWindow,
+    MaximizeWindowVertically,
+    MaximizeWindowHorizontally,
+    UndoFullScreenMode,
+    ChangeToFullScreenMode,
+    ToggleFullScreen,
+    ReportWindowState,
+    ReportWindowPosition,
+    ReportTextAreaPosition,
+    ReportTextAreaSizePixels,
+    ReportWindowSizePixels,
+    ReportScreenSizePixels,
+    ReportCellSizePixels,
+    ReportCellSizePixelsResponse {
+        width: Option<i64>,
+        height: Option<i64>,
+    },
+    ReportTextAreaSizeCells,
+    ReportScreenSizeCells,
+    ReportIconLabel,
+    ReportWindowTitle,
+    PushIconAndWindowTitle,
+    PushIconTitle,
+    PushWindowTitle,
+    PopIconAndWindowTitle,
+    PopIconTitle,
+    PopWindowTitle,
+    /// DECRQCRA; used by esctest
+    ChecksumRectangularArea {
+        request_id: i64,
+        page_number: i64,
+        top: OneBased,
+        left: OneBased,
+        bottom: OneBased,
+        right: OneBased,
+    },
+}
+
+impl Display for Window {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        struct NumstrOrEmpty(Option<i64>);
+        impl Display for NumstrOrEmpty {
+            fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+                if let Some(x) = self.0 {
+                    write!(f, "{x}")?
+                }
+                Ok(())
+            }
+        }
+
+        match self {
+            Window::DeIconify => write!(f, "1t"),
+            Window::Iconify => write!(f, "2t"),
+            Window::MoveWindow { x, y } => write!(f, "3;{x};{y}t"),
+            Window::ResizeWindowPixels { width, height } => {
+                write!(f, "4;{};{}t", NumstrOrEmpty(*height), NumstrOrEmpty(*width))
+            }
+            Window::RaiseWindow => write!(f, "5t"),
+            Window::LowerWindow => write!(f, "6t"),
+            Window::RefreshWindow => write!(f, "7t"),
+            Window::ResizeWindowCells { width, height } => {
+                write!(f, "8;{};{}t", NumstrOrEmpty(*height), NumstrOrEmpty(*width))
+            }
+            Window::RestoreMaximizedWindow => write!(f, "9;0t"),
+            Window::MaximizeWindow => write!(f, "9;1t"),
+            Window::MaximizeWindowVertically => write!(f, "9;2t"),
+            Window::MaximizeWindowHorizontally => write!(f, "9;3t"),
+            Window::UndoFullScreenMode => write!(f, "10;0t"),
+            Window::ChangeToFullScreenMode => write!(f, "10;1t"),
+            Window::ToggleFullScreen => write!(f, "10;2t"),
+            Window::ReportWindowState => write!(f, "11t"),
+            Window::ReportWindowPosition => write!(f, "13t"),
+            Window::ReportTextAreaPosition => write!(f, "13;2t"),
+            Window::ReportTextAreaSizePixels => write!(f, "14t"),
+            Window::ReportWindowSizePixels => write!(f, "14;2t"),
+            Window::ReportScreenSizePixels => write!(f, "15t"),
+            Window::ReportCellSizePixels => write!(f, "16t"),
+            Window::ReportCellSizePixelsResponse { width, height } => {
+                write!(f, "6;{};{}t", NumstrOrEmpty(*height), NumstrOrEmpty(*width))
+            }
+            Window::ReportTextAreaSizeCells => write!(f, "18t"),
+            Window::ReportScreenSizeCells => write!(f, "19t"),
+            Window::ReportIconLabel => write!(f, "20t"),
+            Window::ReportWindowTitle => write!(f, "21t"),
+            Window::PushIconAndWindowTitle => write!(f, "22;0t"),
+            Window::PushIconTitle => write!(f, "22;1t"),
+            Window::PushWindowTitle => write!(f, "22;2t"),
+            Window::PopIconAndWindowTitle => write!(f, "23;0t"),
+            Window::PopIconTitle => write!(f, "23;1t"),
+            Window::PopWindowTitle => write!(f, "23;2t"),
+            Window::ChecksumRectangularArea {
+                request_id,
+                page_number,
+                top,
+                left,
+                bottom,
+                right,
+            } => write!(
+                f,
+                "{request_id};{page_number};{top};{left};{bottom};{right}*y"
+            ),
+        }
+    }
+}
+
 #[cfg(test)]
 mod test {
     use super::*;
@@ -1258,6 +1386,17 @@ mod test {
         assert_eq!(
             "\x1b[39m",
             Csi::Sgr(Sgr::Foreground(ColorSpec::Reset)).to_string(),
+        );
+
+        // Push current window title to the terminal's stack.
+        assert_eq!(
+            "\x1b[22;0t",
+            Csi::Window(Box::new(Window::PushIconAndWindowTitle)).to_string(),
+        );
+        // ... and pop it.
+        assert_eq!(
+            "\x1b[23;0t",
+            Csi::Window(Box::new(Window::PopIconAndWindowTitle)).to_string(),
         );
     }
 }
