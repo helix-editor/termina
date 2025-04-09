@@ -25,7 +25,6 @@ features = [
   "stdio",
   "termios",
   "event",
-  "process",
 ]
 
 [target.'cfg(windows)'.dependencies.windows-sys]

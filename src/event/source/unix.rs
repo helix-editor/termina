@@ -15,7 +15,6 @@ use std::{
 
 use parking_lot::Mutex;
 use rustix::termios;
-use signal_hook::SigId;
 
 use crate::{parse::Parser, terminal::FileDescriptor, Event};
 
@@ -26,7 +25,7 @@ pub struct UnixEventSource {
     parser: Parser,
     read: FileDescriptor,
     write: FileDescriptor,
-    sigwinch_id: SigId,
+    sigwinch_id: signal_hook::SigId,
     sigwinch_pipe: UnixStream,
     wake_pipe: UnixStream,
     wake_pipe_write: Arc<Mutex<UnixStream>>,
@@ -47,8 +46,7 @@ impl UnixEventSource {
     pub(crate) fn new(read: FileDescriptor, write: FileDescriptor) -> io::Result<Self> {
         let (sigwinch_pipe, sigwinch_pipe_write) = UnixStream::pair()?;
         let sigwinch_id = signal_hook::low_level::pipe::register(
-            // TODO: hardcode this? Will we use the process module elsewhere?
-            rustix::process::Signal::WINCH.as_raw(),
+            signal_hook::consts::SIGWINCH,
             sigwinch_pipe_write,
         )?;
         sigwinch_pipe.set_nonblocking(true)?;
