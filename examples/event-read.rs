@@ -96,7 +96,7 @@ fn main() -> io::Result<()> {
                         (line.get_zero_based(), col.get_zero_based())
                     );
                 } else {
-                    eprintln!("Failed to read the cursor position within 50msec");
+                    eprintln!("Failed to read the cursor position within 50msec\r");
                 }
             }
             Event::WindowResized { rows, cols } => {

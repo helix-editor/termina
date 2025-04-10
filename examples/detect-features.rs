@@ -1,4 +1,7 @@
-use std::io::{self, Write as _};
+use std::{
+    io::{self, Write as _},
+    time::Duration,
+};
 
 use termina::{
     escape::{
@@ -45,6 +48,11 @@ fn main() -> io::Result<()> {
 
     let mut features = Features::default();
     loop {
+        if !terminal.poll(Event::is_escape, Some(Duration::from_millis(100)))? {
+            eprintln!("Did not receive any responses to queries in 100ms\r");
+            break;
+        }
+
         match terminal.read(Event::is_escape)? {
             Event::Csi(Csi::Keyboard(csi::Keyboard::ReportFlags(_))) => {
                 features.kitty_keyboard = true
