@@ -78,7 +78,17 @@ impl Display for Sgr {
             f: &mut fmt::Formatter,
         ) -> fmt::Result {
             if alpha == 255 {
-                write!(f, "{code}:2::{red}:{green}:{blue}")
+                // [ITU T.416](https://www.itu.int/rec/T-REC-T.416-199303-I/en) § 13.1.8
+                // says that the correct way to format true colors, even for foreground/background
+                // is  `{code}:2:{colorspace (optional)}:{red}:{green}:{blue}`. More commonly than
+                // not though terminals support the semicolon format shown below. We use semicolon
+                // as it seems to have better compatibility in the wild, especially with legacy or
+                // limited terminals like Windows conhost.
+                //
+                // The Microsoft docs also recommend the semicolon format (however Windows
+                // Terminal accepts either):
+                // <https://learn.microsoft.com/en-us/windows/console/console-virtual-terminal-sequences#extended-colors>
+                write!(f, "{code};2;{red};{green};{blue}")
             } else {
                 write!(f, "{code}:6::{red}:{green}:{blue}:{alpha}")
             }
@@ -142,7 +152,7 @@ impl Display for Sgr {
             Self::Foreground(ColorSpec::BRIGHT_MAGENTA) => write!(f, "95")?,
             Self::Foreground(ColorSpec::BRIGHT_CYAN) => write!(f, "96")?,
             Self::Foreground(ColorSpec::BRIGHT_WHITE) => write!(f, "97")?,
-            Self::Foreground(ColorSpec::PaletteIndex(idx)) => write!(f, "38:5:{idx}")?,
+            Self::Foreground(ColorSpec::PaletteIndex(idx)) => write!(f, "38;5;{idx}")?,
             Self::Foreground(ColorSpec::TrueColor(color)) => write_true_color(38, *color, f)?,
             Self::Background(ColorSpec::Reset) => write!(f, "49")?,
             Self::Background(ColorSpec::BLACK) => write!(f, "40")?,
@@ -161,12 +171,28 @@ impl Display for Sgr {
             Self::Background(ColorSpec::BRIGHT_MAGENTA) => write!(f, "105")?,
             Self::Background(ColorSpec::BRIGHT_CYAN) => write!(f, "106")?,
             Self::Background(ColorSpec::BRIGHT_WHITE) => write!(f, "107")?,
-            Self::Background(ColorSpec::PaletteIndex(idx)) => write!(f, "48:5:{idx}")?,
+            Self::Background(ColorSpec::PaletteIndex(idx)) => write!(f, "48;5;{idx}")?,
             Self::Background(ColorSpec::TrueColor(color)) => write_true_color(48, *color, f)?,
             Self::UnderlineColor(ColorSpec::Reset) => write!(f, "59")?,
             Self::UnderlineColor(ColorSpec::PaletteIndex(idx)) => write!(f, "58:5:{idx}")?,
-            Self::UnderlineColor(ColorSpec::TrueColor(color)) => {
-                write_true_color(58, *color, f)?;
+            Self::UnderlineColor(ColorSpec::TrueColor(RgbaColor {
+                red,
+                green,
+                blue,
+                alpha: 255,
+            })) => {
+                // As mentioned above in `write_true_color`, this is the _correct_ format for a
+                // true color. Styled and colored underlines are a relatively new extension and
+                // terminals tend to support colon syntax since it is correct.
+                write!(f, "58:2::{red}:{green}:{blue}")?;
+            }
+            Self::UnderlineColor(ColorSpec::TrueColor(RgbaColor {
+                red,
+                green,
+                blue,
+                alpha,
+            })) => {
+                write!(f, "58:6::{red}:{green}:{blue}:{alpha}")?;
             }
             Self::Attributes(attributes) => {
                 use SgrModifiers as Mod;
