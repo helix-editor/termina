@@ -355,17 +355,6 @@ impl Terminal for WindowsTerminal {
         Ok(())
     }
 
-    fn reset_mode(&mut self) -> io::Result<()> {
-        self.output.flush()?;
-        self.input.set_mode(self.original_input_mode)?;
-        self.output.get_mut().set_mode(self.original_output_mode)?;
-        self.input.set_code_page(self.original_input_cp)?;
-        self.output
-            .get_mut()
-            .set_code_page(self.original_output_cp)?;
-        Ok(())
-    }
-
     fn get_dimensions(&self) -> io::Result<(u16, u16)> {
         // NOTE: setting dimensions should be done by VT instead of `SetConsoleScreenBufferInfo`.
         // <https://learn.microsoft.com/en-us/windows/console/console-virtual-terminal-sequences#window-width>
@@ -395,7 +384,10 @@ impl Terminal for WindowsTerminal {
 impl Drop for WindowsTerminal {
     fn drop(&mut self) {
         let _ = self.flush();
-        let _ = self.reset_mode();
+        let _ = self.input.set_code_page(self.original_input_cp);
+        let _ = self.output.get_mut().set_code_page(self.original_output_cp);
+        let _ = self.input.set_mode(self.original_input_mode);
+        let _ = self.output.get_mut().set_mode(self.original_output_mode);
     }
 }
 

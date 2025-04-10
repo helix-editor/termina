@@ -140,11 +140,6 @@ impl Terminal for UnixTerminal {
         Ok(())
     }
 
-    fn reset_mode(&mut self) -> io::Result<()> {
-        // NOTE: this is the same as entering cooked mode on Unix but involves more on Windows.
-        self.enter_cooked_mode()
-    }
-
     fn get_dimensions(&self) -> io::Result<(u16, u16)> {
         let winsize = termios::tcgetwinsize(self.write.get_ref())?;
         Ok((winsize.ws_row, winsize.ws_col))
@@ -173,7 +168,7 @@ impl Terminal for UnixTerminal {
 impl Drop for UnixTerminal {
     fn drop(&mut self) {
         let _ = self.flush();
-        let _ = self.reset_mode();
+        let _ = self.enter_cooked_mode();
     }
 }
 
