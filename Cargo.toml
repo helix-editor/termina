@@ -37,8 +37,6 @@ features = [
   # Writing files (including console handles).
   "Win32_Storage_FileSystem",
   "Win32_System_IO",
-  # Setting of "code pages" (encodings) for the console handles to use.
-  "Win32_Globalization",
   # Polling for input.
   "Win32_System_Threading",
   "Win32_Security",

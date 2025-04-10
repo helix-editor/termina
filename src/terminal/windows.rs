@@ -7,10 +7,6 @@ use std::{
 };
 
 use windows_sys::Win32::{
-    // TODO: experiment with Windows compile times by turning off the "Win32_Globalization"
-    // feature and hard-coding this to `65001`. This `CP_UTF8` constant is the only thing used
-    // from that feature and it is unimaginable that it would change in the future.
-    Globalization::CP_UTF8,
     Storage::FileSystem::WriteFile,
     System::Console::{
         self, GetConsoleCP, GetConsoleMode, GetConsoleOutputCP, GetConsoleScreenBufferInfo,
@@ -38,6 +34,13 @@ macro_rules! bail {
 const BUF_SIZE: usize = 128;
 
 type CodePageID = u32;
+/// The code page ID for UTF-8 encoding.
+/// This is the same as `windows_sys::Win32::Globalization::CP_UTF8`. It is copied here rather
+/// than `use`d because it is the only thing we want from the globalization API. Avoiding the
+/// `Win32_Globalization` feature for `windows_sys` saves a fair amount of compilation time.
+/// And it's unimaginable that Windows would ever change a constant like this given their passion
+/// for backwards compatibility.
+const CP_UTF8: CodePageID = 65001;
 
 // CREDIT: Like the Unix terminal module this is mainly based on WezTerm code (except for the
 // event source parts in `src/event/source/windows.rs` which reaches into these functions).
