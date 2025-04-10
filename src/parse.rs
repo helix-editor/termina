@@ -102,11 +102,16 @@ mod windows {
                         // This skips 'down's. IIRC Termwiz skips 'down's and Crossterm skips
                         // 'up's. If we skip 'up's we don't seem to get key events at all.
                         if record.bKeyDown == 0 {
-                            return;
+                            continue;
+                        }
+                        let byte = unsafe { record.uChar.AsciiChar } as u8;
+                        // The zero byte is sent when the input record is not VT.
+                        if byte == 0 {
+                            continue;
                         }
                         // `read_console_input` uses `ReadConsoleInputA` so we should treat the
                         // key code as a byte and add it to the buffer.
-                        self.buffer.push(unsafe { record.uChar.AsciiChar } as u8);
+                        self.buffer.push(byte);
                     }
                     Console::WINDOW_BUFFER_SIZE_EVENT => {
                         let record = unsafe { record.Event.WindowBufferSizeEvent };
