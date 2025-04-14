@@ -153,7 +153,7 @@ impl AsRawHandle for InputHandle {
 }
 
 #[derive(Debug)]
-pub(crate) struct OutputHandle {
+pub struct OutputHandle {
     handle: OwnedHandle,
 }
 
@@ -281,6 +281,7 @@ pub struct WindowsTerminal {
     original_output_mode: CONSOLE_MODE,
     original_input_cp: CodePageID,
     original_output_cp: CodePageID,
+    has_panic_hook: bool,
 }
 
 impl WindowsTerminal {
@@ -317,6 +318,7 @@ impl WindowsTerminal {
             original_output_mode,
             original_input_cp,
             original_output_cp,
+            has_panic_hook: false,
         })
     }
 }
@@ -382,15 +384,36 @@ impl Terminal for WindowsTerminal {
     fn read<F: Fn(&Event) -> bool>(&self, filter: F) -> io::Result<Event> {
         self.reader.read(filter)
     }
+
+    fn set_panic_hook(&mut self, f: impl Fn(&mut OutputHandle) + Send + Sync + 'static) {
+        let original_input_cp = self.original_input_cp;
+        let original_input_mode = self.original_input_mode;
+        let original_output_cp = self.original_output_cp;
+        let original_output_mode = self.original_output_mode;
+        let hook = std::panic::take_hook();
+        std::panic::set_hook(Box::new(move |info| {
+            if let Ok((mut input, mut output)) = open_pty() {
+                f(&mut output);
+                let _ = input.set_code_page(original_input_cp);
+                let _ = input.set_mode(original_input_mode);
+                let _ = output.set_code_page(original_output_cp);
+                let _ = output.set_mode(original_output_mode);
+            }
+            hook(info);
+        }));
+        self.has_panic_hook = true;
+    }
 }
 
 impl Drop for WindowsTerminal {
     fn drop(&mut self) {
-        let _ = self.flush();
-        let _ = self.input.set_code_page(self.original_input_cp);
-        let _ = self.output.get_mut().set_code_page(self.original_output_cp);
-        let _ = self.input.set_mode(self.original_input_mode);
-        let _ = self.output.get_mut().set_mode(self.original_output_mode);
+        if !self.has_panic_hook || !std::thread::panicking() {
+            let _ = self.flush();
+            let _ = self.input.set_code_page(self.original_input_cp);
+            let _ = self.output.get_mut().set_code_page(self.original_output_cp);
+            let _ = self.input.set_mode(self.original_input_mode);
+            let _ = self.output.get_mut().set_mode(self.original_output_mode);
+        }
     }
 }
 

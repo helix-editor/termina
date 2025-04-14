@@ -9,4 +9,4 @@ pub use event::{
     stream::{DummyEventStream, EventStream},
     Event,
 };
-pub use terminal::{PlatformTerminal, Terminal};
+pub use terminal::{PlatformHandle, PlatformTerminal, Terminal};

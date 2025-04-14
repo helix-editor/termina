@@ -22,6 +22,11 @@ pub type PlatformTerminal = UnixTerminal;
 #[cfg(windows)]
 pub type PlatformTerminal = WindowsTerminal;
 
+#[cfg(unix)]
+pub type PlatformHandle = FileDescriptor;
+#[cfg(windows)]
+pub type PlatformHandle = OutputHandle;
+
 // CREDIT: This is heavily based on termwiz.
 // <https://github.com/wezterm/wezterm/blob/a87358516004a652ad840bc1661bdf65ffc89b43/termwiz/src/terminal/mod.rs#L50-L111>
 // This trait is simpler, however, and the terminals themselves do not have drop glue or try
@@ -59,4 +64,12 @@ pub trait Terminal: io::Write {
     /// This function blocks until an `Event` is available. Use `poll` first to guarantee that the
     /// read won't block.
     fn read<F: Fn(&Event) -> bool>(&self, filter: F) -> io::Result<Event>;
+    /// Sets a hook function to run.
+    ///
+    /// Depending on how your application handles panics you may wish to set a panic hook which
+    /// eagerly resets the terminal (such as by disabling bracketed paste and entering the main
+    /// screen). The parameter for this hook is a platform handle to `std::io::stdout` or
+    /// equivalent which implements `std::io::Write`. When the hook function is finished running
+    /// the handle's modes will be reset (same as `enter_cooked_mode`).
+    fn set_panic_hook(&mut self, f: impl Fn(&mut PlatformHandle) + Send + Sync + 'static);
 }

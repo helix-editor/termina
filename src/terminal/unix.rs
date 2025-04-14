@@ -19,7 +19,7 @@ const BUF_SIZE: usize = 4096;
 // <https://github.com/wezterm/wezterm/blob/a87358516004a652ad840bc1661bdf65ffc89b43/filedescriptor/src/unix.rs>
 
 #[derive(Debug)]
-pub(crate) enum FileDescriptor {
+pub enum FileDescriptor {
     Owned(OwnedFd),
     Borrowed(BorrowedFd<'static>),
 }
@@ -101,6 +101,7 @@ pub struct UnixTerminal {
     write: BufWriter<FileDescriptor>,
     /// The termios of the PTY's writer detected during `Self::new`.
     original_termios: Termios,
+    has_panic_hook: bool,
 }
 
 impl UnixTerminal {
@@ -114,6 +115,7 @@ impl UnixTerminal {
             reader,
             write: BufWriter::with_capacity(BUF_SIZE, write),
             original_termios,
+            has_panic_hook: false,
         })
     }
 }
@@ -163,12 +165,27 @@ impl Terminal for UnixTerminal {
     fn read<F: Fn(&Event) -> bool>(&self, filter: F) -> io::Result<Event> {
         self.reader.read(filter)
     }
+
+    fn set_panic_hook(&mut self, f: impl Fn(&mut FileDescriptor) + Send + Sync + 'static) {
+        let original_termios = self.original_termios.clone();
+        let hook = std::panic::take_hook();
+        std::panic::set_hook(Box::new(move |info| {
+            if let Ok((_read, mut write)) = open_pty() {
+                f(&mut write);
+                let _ = termios::tcsetattr(write, termios::OptionalActions::Now, &original_termios);
+            }
+            hook(info);
+        }));
+        self.has_panic_hook = true;
+    }
 }
 
 impl Drop for UnixTerminal {
     fn drop(&mut self) {
-        let _ = self.flush();
-        let _ = self.enter_cooked_mode();
+        if !self.has_panic_hook || !std::thread::panicking() {
+            let _ = self.flush();
+            let _ = self.enter_cooked_mode();
+        }
     }
 }
 
