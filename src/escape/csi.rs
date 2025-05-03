@@ -5,7 +5,10 @@
 // though, for example Contour's theme mode extension in `Mode::QueryTheme` and friends and the
 // `Sgr::Attributes` / `SgrAttributes` / `SgrModifiers` types.
 
-use std::fmt::{self, Display};
+use std::{
+    fmt::{self, Display},
+    num::NonZeroU16,
+};
 
 use crate::{
     escape::OneBased,
@@ -30,7 +33,7 @@ pub enum Csi {
 impl Display for Csi {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         // This here is the "control sequence introducer" (CSI):
-        write!(f, "\x1b[")?;
+        f.write_str(super::CSI)?;
         match self {
             Self::Sgr(sgr) => write!(f, "{sgr}m"),
             Self::Cursor(cursor) => cursor.fmt(f),
@@ -197,85 +200,119 @@ impl Display for Sgr {
             Self::Attributes(attributes) => {
                 use SgrModifiers as Mod;
 
+                let ps_budget = attributes.parameter_chunk_size.get();
+                let mut ps_written = 0;
                 let mut first = true;
-                let mut write = |sgr: Self| {
+                let mut write = |sgr: Self, n_ps: u16| {
                     if !first {
                         f.write_str(";")?;
                     }
                     first = false;
+                    // If writing this parameter would exceed the budget, finish this CSI sequence
+                    // and start a new one which will start with this SGR.
+                    ps_written += n_ps;
+                    if ps_written > ps_budget {
+                        write!(f, "m{}", super::CSI)?;
+                        ps_written = n_ps;
+                    }
                     write!(f, "{sgr}")
                 };
                 if attributes.modifiers.contains(Mod::RESET) {
-                    write(Self::Reset)?;
+                    write(Self::Reset, 0)?;
                 }
                 if let Some(color) = attributes.foreground {
-                    write(Self::Foreground(color))?;
+                    write(
+                        Self::Foreground(color),
+                        // TODO: for colors currently we estimate the largest Ps count. This could
+                        // be fine-tuned a bit more.
+                        match color {
+                            ColorSpec::Reset => 1,
+                            ColorSpec::PaletteIndex(_) => 3,
+                            ColorSpec::TrueColor(RgbaColor { alpha: 255, .. }) => 5,
+                            ColorSpec::TrueColor(_) => 6,
+                        },
+                    )?;
                 }
                 if let Some(color) = attributes.background {
-                    write(Self::Background(color))?;
+                    write(
+                        Self::Background(color),
+                        match color {
+                            ColorSpec::Reset => 1,
+                            ColorSpec::PaletteIndex(_) => 3,
+                            ColorSpec::TrueColor(RgbaColor { alpha: 255, .. }) => 5,
+                            ColorSpec::TrueColor(_) => 6,
+                        },
+                    )?;
                 }
                 if let Some(color) = attributes.underline_color {
-                    write(Self::UnderlineColor(color))?;
+                    write(
+                        Self::UnderlineColor(color),
+                        match color {
+                            ColorSpec::Reset => 1,
+                            ColorSpec::PaletteIndex(_) => 3,
+                            ColorSpec::TrueColor(_) => 6,
+                        },
+                    )?;
                 }
                 if attributes.modifiers.contains(Mod::INTENSITY_NORMAL) {
-                    write(Self::Intensity(Intensity::Normal))?;
+                    write(Self::Intensity(Intensity::Normal), 1)?;
                 }
                 if attributes.modifiers.contains(Mod::INTENSITY_DIM) {
-                    write(Self::Intensity(Intensity::Dim))?;
+                    write(Self::Intensity(Intensity::Dim), 1)?;
                 }
                 if attributes.modifiers.contains(Mod::INTENSITY_BOLD) {
-                    write(Self::Intensity(Intensity::Bold))?;
+                    write(Self::Intensity(Intensity::Bold), 1)?;
                 }
                 if attributes.modifiers.contains(Mod::UNDERLINE_NONE) {
-                    write(Self::Underline(Underline::None))?;
+                    write(Self::Underline(Underline::None), 1)?;
                 }
                 if attributes.modifiers.contains(Mod::UNDERLINE_SINGLE) {
-                    write(Self::Underline(Underline::Single))?;
+                    write(Self::Underline(Underline::Single), 1)?;
                 }
                 if attributes.modifiers.contains(Mod::UNDERLINE_DOUBLE) {
-                    write(Self::Underline(Underline::Double))?;
+                    write(Self::Underline(Underline::Double), 1)?;
                 }
                 if attributes.modifiers.contains(Mod::UNDERLINE_CURLY) {
-                    write(Self::Underline(Underline::Curly))?;
+                    write(Self::Underline(Underline::Curly), 2)?;
                 }
                 if attributes.modifiers.contains(Mod::UNDERLINE_DOTTED) {
-                    write(Self::Underline(Underline::Dotted))?;
+                    write(Self::Underline(Underline::Dotted), 2)?;
                 }
                 if attributes.modifiers.contains(Mod::UNDERLINE_DASHED) {
-                    write(Self::Underline(Underline::Dashed))?;
+                    write(Self::Underline(Underline::Dashed), 2)?;
                 }
                 if attributes.modifiers.contains(Mod::BLINK_NONE) {
-                    write(Self::Blink(Blink::None))?;
+                    write(Self::Blink(Blink::None), 1)?;
                 }
                 if attributes.modifiers.contains(Mod::BLINK_SLOW) {
-                    write(Self::Blink(Blink::Slow))?;
+                    write(Self::Blink(Blink::Slow), 1)?;
                 }
                 if attributes.modifiers.contains(Mod::BLINK_RAPID) {
-                    write(Self::Blink(Blink::Rapid))?;
+                    write(Self::Blink(Blink::Rapid), 1)?;
                 }
                 if attributes.modifiers.contains(Mod::ITALIC) {
-                    write(Self::Italic(true))?;
+                    write(Self::Italic(true), 1)?;
                 }
                 if attributes.modifiers.contains(Mod::NO_ITALIC) {
-                    write(Self::Italic(false))?;
+                    write(Self::Italic(false), 1)?;
                 }
                 if attributes.modifiers.contains(Mod::REVERSE) {
-                    write(Self::Reverse(true))?;
+                    write(Self::Reverse(true), 1)?;
                 }
                 if attributes.modifiers.contains(Mod::NO_REVERSE) {
-                    write(Self::Reverse(false))?;
+                    write(Self::Reverse(false), 1)?;
                 }
                 if attributes.modifiers.contains(Mod::INVISIBLE) {
-                    write(Self::Invisible(true))?;
+                    write(Self::Invisible(true), 1)?;
                 }
                 if attributes.modifiers.contains(Mod::NO_INVISIBLE) {
-                    write(Self::Invisible(false))?;
+                    write(Self::Invisible(false), 1)?;
                 }
                 if attributes.modifiers.contains(Mod::STRIKE_THROUGH) {
-                    write(Self::StrikeThrough(true))?;
+                    write(Self::StrikeThrough(true), 1)?;
                 }
                 if attributes.modifiers.contains(Mod::NO_STRIKE_THROUGH) {
-                    write(Self::StrikeThrough(false))?;
+                    write(Self::StrikeThrough(false), 1)?;
                 }
             }
         }
@@ -311,14 +348,44 @@ impl Display for Sgr {
 /// assert_eq!(Csi::Sgr(Sgr::Foreground(ColorSpec::GREEN)).to_string(), "\x1b[32m");
 /// assert_eq!(Csi::Sgr(Sgr::Intensity(Intensity::Bold)).to_string(), "\x1b[1m");
 /// ```
-#[derive(Debug, Default, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 // > You can use more than one Ps value to select different character attributes.
 // <https://vt100.net/docs/vt510-rm/SGR>
 pub struct SgrAttributes {
+    /// The foreground color used to paint text.
     pub foreground: Option<ColorSpec>,
+    /// The background color used to paint the cell.
     pub background: Option<ColorSpec>,
+    /// The color of the underline in the current cell.
     pub underline_color: Option<ColorSpec>,
+    /// Other modifiers like italic, bold, blinking, etc.
+    ///
+    /// See [SgrModifiers].
     pub modifiers: SgrModifiers,
+    /// The number of parameters which are allowed in a chunk.
+    ///
+    /// The VT parsers used in many terminal emulators set limits on the number of parameters a
+    /// CSI sequence can use. After the limit they typically ignore all other parameters. For
+    /// many terminal emulators this is a relatively high number like 256 but some terminal
+    /// emulators set their limit as low as 10. For maximum compatibility this is set to 10 by
+    /// default.
+    ///
+    /// The number of parameters taken to describe a modifier varies by modifier. True-color
+    /// colors (foreground, background, underline color) take the most while simple modifiers like
+    /// `SgrModifiers::ITALIC` take just one.
+    pub parameter_chunk_size: NonZeroU16,
+}
+
+impl Default for SgrAttributes {
+    fn default() -> Self {
+        Self {
+            foreground: Default::default(),
+            background: Default::default(),
+            underline_color: Default::default(),
+            modifiers: Default::default(),
+            parameter_chunk_size: unsafe { NonZeroU16::new_unchecked(10) },
+        }
+    }
 }
 
 impl SgrAttributes {
@@ -1376,6 +1443,8 @@ impl Display for Window {
 
 #[cfg(test)]
 mod test {
+    use crate::style::RgbColor;
+
     use super::*;
 
     const ENTER_ALTERNATE_SCREEN: Csi = Csi::Mode(Mode::SetDecPrivateMode(DecPrivateMode::Code(
@@ -1424,5 +1493,24 @@ mod test {
             "\x1b[23;0t",
             Csi::Window(Box::new(Window::PopIconAndWindowTitle)).to_string(),
         );
+    }
+
+    #[test]
+    fn sgr_attributes_csi_param_limit() {
+        let mut attributes = SgrAttributes {
+            foreground: Some(ColorSpec::TrueColor(RgbColor::new(80, 100, 120).into())),
+            background: Some(ColorSpec::TrueColor(RgbColor::new(80, 100, 120).into())),
+            underline_color: Some(ColorSpec::TrueColor(RgbColor::new(80, 100, 120).into())),
+            modifiers: SgrModifiers::UNDERLINE_CURLY,
+            ..Default::default()
+        };
+        // The sequence must be chunked into two since the chunk size is exceeded.
+        // Here it is perfectly chunked so that the foreground and background are a full chunk.
+        let expected = "\x1b[38;2;80;100;120;48;2;80;100;120;m\x1b[58:2::80:100:120;4:3m";
+        assert_eq!(expected, Csi::Sgr(Sgr::Attributes(attributes)).to_string());
+        // If we make the chunk size bigger, we still chunk the same way. We wouldn't cut an SGR
+        // sequence up in the middle: that would make it nonsense.
+        attributes.parameter_chunk_size = NonZeroU16::new(12).unwrap();
+        assert_eq!(expected, Csi::Sgr(Sgr::Attributes(attributes)).to_string());
     }
 }
