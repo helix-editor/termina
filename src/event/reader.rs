@@ -13,13 +13,17 @@ use super::{
     Event,
 };
 
+/// A reader of events from the terminal's input handle.
+///
+/// Note that this type wraps an `Arc` and is cheap to clone. If the `event-stream` feature is
+/// enabled then this value should be passed to `EventStream::new`.
 #[derive(Debug, Clone)]
-pub(crate) struct EventReader {
+pub struct EventReader {
     shared: Arc<Mutex<Shared>>,
 }
 
 impl EventReader {
-    pub fn new(source: PlatformEventSource) -> Self {
+    pub(crate) fn new(source: PlatformEventSource) -> Self {
         let shared = Shared {
             events: VecDeque::with_capacity(32),
             source,

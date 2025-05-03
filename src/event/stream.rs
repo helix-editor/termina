@@ -21,7 +21,10 @@ use super::{reader::EventReader, source::PlatformWaker, Event};
 
 /// A stream of `termina::Event`s received from the terminal.
 ///
-/// Create an event stream for a terminal with `termina::Terminal::event_stream`.
+/// This type is only available if the `event-stream` feature is enabled.
+///
+/// Create an event stream for a terminal by passing the reader [crate::Terminal::event_reader]
+/// into [EventStream::new] with a filter.
 #[derive(Debug)]
 pub struct EventStream<F: Fn(&Event) -> bool> {
     waker: PlatformWaker,
@@ -43,7 +46,7 @@ impl<F> EventStream<F>
 where
     F: Fn(&Event) -> bool + Clone + Send + Sync + 'static,
 {
-    pub(crate) fn new(reader: EventReader, filter: F) -> Self {
+    pub fn new(reader: EventReader, filter: F) -> Self {
         let waker = reader.waker();
 
         let (task_sender, receiver) = mpsc::sync_channel::<Task>(1);
@@ -114,20 +117,5 @@ impl<F: Fn(&Event) -> bool> Stream for EventStream<F> {
             }
             Err(err) => Poll::Ready(Some(Err(err))),
         }
-    }
-}
-
-/// A dummy event stream which always polls as "pending."
-///
-/// This stream will never produce any events. This struct is meant for testing scenarios in
-/// which you don't want to receive terminal events.
-#[derive(Debug)]
-pub struct DummyEventStream;
-
-impl Stream for DummyEventStream {
-    type Item = io::Result<Event>;
-
-    fn poll_next(self: Pin<&mut Self>, _cx: &mut Context<'_>) -> Poll<Option<Self::Item>> {
-        Poll::Pending
     }
 }

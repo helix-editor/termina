@@ -6,6 +6,7 @@ use crate::escape::{csi::Csi, dcs::Dcs};
 
 pub(crate) mod reader;
 pub(crate) mod source;
+#[cfg(feature = "event-stream")]
 pub(crate) mod stream;
 
 #[derive(Debug, Clone, PartialEq, Eq)]

@@ -9,10 +9,14 @@ edition = "2021"
 license = "MIT OR MPL-2.0"
 rust-version = "1.70"
 
+[features]
+default = []
+event-stream = ["dep:futures-core"]
+
 [dependencies]
 parking_lot = "0.12"
 bitflags = "2"
-futures-core = "0.3"
+futures-core = { version = "0.3", optional = true }
 
 [target.'cfg(unix)'.dependencies]
 signal-hook = "0.3"

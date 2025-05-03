@@ -15,10 +15,7 @@ use windows_sys::Win32::{
     },
 };
 
-use crate::{
-    event::{reader::EventReader, source::WindowsEventSource},
-    Event, EventStream,
-};
+use crate::{event::source::WindowsEventSource, Event, EventReader};
 
 use super::Terminal;
 
@@ -366,11 +363,8 @@ impl Terminal for WindowsTerminal {
         self.output.get_ref().get_dimensions()
     }
 
-    fn event_stream<F: Fn(&Event) -> bool + Clone + Send + Sync + 'static>(
-        &self,
-        filter: F,
-    ) -> EventStream<F> {
-        EventStream::new(self.reader.clone(), filter)
+    fn event_reader(&self) -> EventReader {
+        self.reader.clone()
     }
 
     fn poll<F: Fn(&Event) -> bool>(
