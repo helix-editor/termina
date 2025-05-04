@@ -25,10 +25,9 @@ use super::{reader::EventReader, source::PlatformWaker, Event};
 ///
 /// Create an event stream for a terminal by passing the reader [crate::Terminal::event_reader]
 /// into [EventStream::new] with a filter.
-#[derive(Debug)]
-pub struct EventStream<F: Fn(&Event) -> bool> {
+pub struct EventStream {
     waker: PlatformWaker,
-    filter: F,
+    filter: Arc<dyn Fn(&Event) -> bool>,
     reader: EventReader,
     stream_wake_task_executed: Arc<AtomicBool>,
     stream_wake_task_should_shutdown: Arc<AtomicBool>,
@@ -42,11 +41,12 @@ struct Task {
     stream_wake_task_should_shutdown: Arc<AtomicBool>,
 }
 
-impl<F> EventStream<F>
-where
-    F: Fn(&Event) -> bool + Clone + Send + Sync + 'static,
-{
-    pub fn new(reader: EventReader, filter: F) -> Self {
+impl EventStream {
+    pub fn new<F>(reader: EventReader, filter: F) -> Self
+    where
+        F: Fn(&Event) -> bool + Send + Sync + 'static,
+    {
+        let filter = Arc::new(filter);
         let waker = reader.waker();
 
         let (task_sender, receiver) = mpsc::sync_channel::<Task>(1);
@@ -56,7 +56,7 @@ where
         thread::spawn(move || {
             while let Ok(task) = receiver.recv() {
                 loop {
-                    if let Ok(true) = task_reader.poll(None, &task_filter) {
+                    if let Ok(true) = task_reader.poll(None, &*task_filter) {
                         break;
                     }
                     if task.stream_wake_task_should_shutdown.load(Ordering::SeqCst) {
@@ -80,7 +80,7 @@ where
     }
 }
 
-impl<F: Fn(&Event) -> bool> Drop for EventStream<F> {
+impl Drop for EventStream {
     fn drop(&mut self) {
         self.stream_wake_task_should_shutdown
             .store(true, Ordering::SeqCst);
@@ -88,12 +88,15 @@ impl<F: Fn(&Event) -> bool> Drop for EventStream<F> {
     }
 }
 
-impl<F: Fn(&Event) -> bool> Stream for EventStream<F> {
+impl Stream for EventStream {
     type Item = io::Result<Event>;
 
     fn poll_next(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Option<Self::Item>> {
-        match self.reader.poll(Some(Duration::from_secs(0)), &self.filter) {
-            Ok(true) => match self.reader.read(&self.filter) {
+        match self
+            .reader
+            .poll(Some(Duration::from_secs(0)), &*self.filter)
+        {
+            Ok(true) => match self.reader.read(&*self.filter) {
                 Ok(event) => Poll::Ready(Some(Ok(event))),
                 Err(err) => Poll::Ready(Some(Err(err))),
             },

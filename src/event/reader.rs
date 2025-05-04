@@ -41,7 +41,7 @@ impl EventReader {
 
     pub fn poll<F>(&self, timeout: Option<Duration>, filter: F) -> io::Result<bool>
     where
-        F: Fn(&Event) -> bool,
+        F: FnMut(&Event) -> bool,
     {
         let (mut reader, timeout) = if let Some(timeout) = timeout {
             let poll_timeout = PollTimeout::new(Some(timeout));
@@ -58,7 +58,7 @@ impl EventReader {
 
     pub fn read<F>(&self, filter: F) -> io::Result<Event>
     where
-        F: Fn(&Event) -> bool,
+        F: FnMut(&Event) -> bool,
     {
         let mut reader = self.shared.lock();
         reader.read(filter)
@@ -73,11 +73,11 @@ struct Shared {
 }
 
 impl Shared {
-    fn poll<F>(&mut self, timeout: Option<Duration>, filter: F) -> io::Result<bool>
+    fn poll<F>(&mut self, timeout: Option<Duration>, mut filter: F) -> io::Result<bool>
     where
-        F: Fn(&Event) -> bool,
+        F: FnMut(&Event) -> bool,
     {
-        if self.events.iter().any(&filter) {
+        if self.events.iter().any(&mut (filter)) {
             return Ok(true);
         }
 
@@ -111,9 +111,9 @@ impl Shared {
         }
     }
 
-    fn read<F>(&mut self, filter: F) -> io::Result<Event>
+    fn read<F>(&mut self, mut filter: F) -> io::Result<Event>
     where
-        F: Fn(&Event) -> bool,
+        F: FnMut(&Event) -> bool,
     {
         let mut skipped_events = VecDeque::new();
 
@@ -126,7 +126,7 @@ impl Shared {
                     skipped_events.push_back(event);
                 }
             }
-            let _ = self.poll(None, &filter)?;
+            let _ = self.poll(None, &mut filter)?;
         }
     }
 }
