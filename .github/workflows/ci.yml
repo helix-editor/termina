@@ -76,8 +76,11 @@ jobs:
       - name: Run cargo fmt
         run: cargo fmt --check
 
-      - name: Run cargo clippy
+      - name: Run cargo clippy with default features enabled
         run: cargo clippy -- -D warnings
+
+      - name: Run cargo clippy with all features enabled
+        run: cargo clippy --all-features -- -D warnings
 
       - name: Run cargo doc
         run: cargo doc --no-deps --document-private-items
