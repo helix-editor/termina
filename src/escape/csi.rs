@@ -11,9 +11,9 @@ use std::{
 };
 
 use crate::{
-    escape::OneBased,
     event::Modifiers,
     style::{Blink, ColorSpec, CursorStyle, Font, Intensity, RgbaColor, Underline, VerticalAlign},
+    OneBased,
 };
 
 #[derive(Debug, Clone, PartialEq, Eq)]

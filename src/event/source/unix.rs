@@ -16,7 +16,7 @@ use std::{
 use parking_lot::Mutex;
 use rustix::termios;
 
-use crate::{parse::Parser, terminal::FileDescriptor, Event};
+use crate::{parse::Parser, terminal::FileDescriptor, Event, OneBased};
 
 use super::{EventSource, PollTimeout};
 
@@ -122,10 +122,10 @@ impl EventSource for UnixEventSource {
                 while read_complete(&self.sigwinch_pipe, &mut [0; 1024])? != 0 {}
 
                 let winsize = termios::tcgetwinsize(&self.write)?;
-                let event = Event::WindowResized {
-                    rows: winsize.ws_row,
-                    cols: winsize.ws_col,
-                };
+                // winsize is already one-based.
+                let rows = OneBased::new(winsize.ws_row).unwrap();
+                let cols = OneBased::new(winsize.ws_col).unwrap();
+                let event = Event::WindowResized { rows, cols };
                 return Ok(Some(event));
             }
 

@@ -15,7 +15,7 @@ use windows_sys::Win32::{
     },
 };
 
-use crate::{event::source::WindowsEventSource, Event, EventReader};
+use crate::{event::source::WindowsEventSource, Event, EventReader, OneBased};
 
 use super::Terminal;
 
@@ -243,7 +243,7 @@ impl OutputHandle {
         Ok(())
     }
 
-    fn get_dimensions(&self) -> io::Result<(u16, u16)> {
+    fn get_dimensions(&self) -> io::Result<(OneBased, OneBased)> {
         let mut info: CONSOLE_SCREEN_BUFFER_INFO = unsafe { mem::zeroed() };
         if unsafe { GetConsoleScreenBufferInfo(self.as_raw_handle(), &mut info) } == 0 {
             bail!(
@@ -251,10 +251,9 @@ impl OutputHandle {
                 io::Error::last_os_error()
             );
         }
-        // NOTE: Unix dimensions are one-indexed. `+1` here to normalize to Unix convention.
-        let rows = info.srWindow.Bottom - info.srWindow.Top + 1;
-        let cols = info.srWindow.Right - info.srWindow.Left + 1;
-        Ok((rows as u16, cols as u16))
+        let rows = OneBased::from_zero_based((info.srWindow.Bottom - info.srWindow.Top) as u16);
+        let cols = OneBased::from_zero_based((info.srWindow.Right - info.srWindow.Left) as u16);
+        Ok((rows, cols))
     }
 }
 
@@ -400,7 +399,7 @@ impl Terminal for WindowsTerminal {
         Ok(())
     }
 
-    fn get_dimensions(&self) -> io::Result<(u16, u16)> {
+    fn get_dimensions(&self) -> io::Result<(OneBased, OneBased)> {
         // NOTE: setting dimensions should be done by VT instead of `SetConsoleScreenBufferInfo`.
         // <https://learn.microsoft.com/en-us/windows/console/console-virtual-terminal-sequences#window-width>
         self.output.get_ref().get_dimensions()

@@ -91,6 +91,8 @@ impl Parser {
 mod windows {
     use windows_sys::Win32::System::Console;
 
+    use crate::OneBased;
+
     use super::*;
 
     impl Parser {
@@ -114,13 +116,16 @@ mod windows {
                         self.buffer.push(byte);
                     }
                     Console::WINDOW_BUFFER_SIZE_EVENT => {
+                        // NOTE: the `WINDOW_BUFFER_SIZE_EVENT` coordinates are one-based, even
+                        // though `GetConsoleScreenBufferInfo` is zero-based.
                         let record = unsafe { record.Event.WindowBufferSizeEvent };
-                        self.events.push_back(Event::WindowResized {
-                            // Windows sizes are zero-indexed, Unix are 1-indexed. Normalize
-                            // to Unix:
-                            rows: (record.dwSize.Y + 1) as u16,
-                            cols: (record.dwSize.X + 1) as u16,
-                        });
+                        let Some(rows) = OneBased::new(record.dwSize.Y as u16) else {
+                            continue;
+                        };
+                        let Some(cols) = OneBased::new(record.dwSize.X as u16) else {
+                            continue;
+                        };
+                        self.events.push_back(Event::WindowResized { rows, cols });
                     }
                     _ => (),
                 }

@@ -2,7 +2,10 @@
 // sequences like CSI and DCS in the `Event` struct and do not make a distinction between
 // `InternalEvent` and `Event`. Otherwise all `KeyEvent` code is nearly identical to crossterm.
 
-use crate::escape::{csi::Csi, dcs::Dcs};
+use crate::{
+    escape::{csi::Csi, dcs::Dcs},
+    OneBased,
+};
 
 pub(crate) mod reader;
 pub(crate) mod source;
@@ -15,8 +18,8 @@ pub enum Event {
     Mouse(MouseEvent),
     /// The window was resized to the given dimensions.
     WindowResized {
-        rows: u16,
-        cols: u16,
+        rows: OneBased,
+        cols: OneBased,
     },
     FocusIn,
     FocusOut,

@@ -5,7 +5,7 @@ use std::{
     os::unix::prelude::*,
 };
 
-use crate::{event::source::UnixEventSource, Event, EventReader};
+use crate::{event::source::UnixEventSource, Event, EventReader, OneBased};
 
 use super::Terminal;
 
@@ -139,9 +139,12 @@ impl Terminal for UnixTerminal {
         Ok(())
     }
 
-    fn get_dimensions(&self) -> io::Result<(u16, u16)> {
+    fn get_dimensions(&self) -> io::Result<(OneBased, OneBased)> {
         let winsize = termios::tcgetwinsize(self.write.get_ref())?;
-        Ok((winsize.ws_row, winsize.ws_col))
+        // winsize is already one-based.
+        let rows = OneBased::new(winsize.ws_row).unwrap();
+        let cols = OneBased::new(winsize.ws_col).unwrap();
+        Ok((rows, cols))
     }
 
     fn event_reader(&self) -> EventReader {

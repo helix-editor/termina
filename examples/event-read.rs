@@ -9,7 +9,7 @@ use std::{
 use termina::{
     escape::csi::{self, KittyKeyboardFlags},
     event::{KeyCode, KeyEvent},
-    Event, PlatformTerminal, Terminal,
+    Event, OneBased, PlatformTerminal, Terminal,
 };
 
 const HELP: &str = r#"Blocking read()
@@ -124,7 +124,10 @@ fn main() -> io::Result<()> {
     Ok(())
 }
 
-fn flush_resize_events(terminal: &PlatformTerminal, original_size: (u16, u16)) -> (u16, u16) {
+fn flush_resize_events(
+    terminal: &PlatformTerminal,
+    original_size: (OneBased, OneBased),
+) -> (OneBased, OneBased) {
     let mut size = original_size;
     let filter = |event: &Event| matches!(event, Event::WindowResized { .. });
     while let Ok(true) = terminal.poll(filter, Some(Duration::from_millis(50))) {
