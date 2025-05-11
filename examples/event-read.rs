@@ -9,7 +9,7 @@ use std::{
 use termina::{
     escape::csi::{self, KittyKeyboardFlags},
     event::{KeyCode, KeyEvent},
-    Event, OneBased, PlatformTerminal, Terminal,
+    Event, PlatformTerminal, Terminal, WindowSize,
 };
 
 const HELP: &str = r#"Blocking read()
@@ -99,8 +99,8 @@ fn main() -> io::Result<()> {
                     eprintln!("Failed to read the cursor position within 50msec\r");
                 }
             }
-            Event::WindowResized { rows, cols } => {
-                let new_size = flush_resize_events(&terminal, (rows, cols));
+            Event::WindowResized(dimensions) => {
+                let new_size = flush_resize_events(&terminal, dimensions);
                 println!("Resize from {size:?} to {new_size:?}\r");
                 size = new_size;
             }
@@ -124,15 +124,12 @@ fn main() -> io::Result<()> {
     Ok(())
 }
 
-fn flush_resize_events(
-    terminal: &PlatformTerminal,
-    original_size: (OneBased, OneBased),
-) -> (OneBased, OneBased) {
+fn flush_resize_events(terminal: &PlatformTerminal, original_size: WindowSize) -> WindowSize {
     let mut size = original_size;
     let filter = |event: &Event| matches!(event, Event::WindowResized { .. });
     while let Ok(true) = terminal.poll(filter, Some(Duration::from_millis(50))) {
-        if let Ok(Event::WindowResized { rows, cols }) = terminal.read(filter) {
-            size = (rows, cols)
+        if let Ok(Event::WindowResized(dimensions)) = terminal.read(filter) {
+            size = dimensions;
         }
     }
     size

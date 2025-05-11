@@ -12,7 +12,7 @@ pub use unix::*;
 #[cfg(windows)]
 pub use windows::*;
 
-use crate::{Event, EventReader, OneBased};
+use crate::{Event, EventReader, WindowSize};
 
 /// An alias to the terminal available for the current platform.
 ///
@@ -48,7 +48,7 @@ pub trait Terminal: io::Write {
     /// While in "cooked" mode a terminal will interpret the incoming data in ways that are useful
     /// such as waiting for an Enter key press to pass input to the application.
     fn enter_cooked_mode(&mut self) -> io::Result<()>;
-    fn get_dimensions(&self) -> io::Result<(OneBased, OneBased)>;
+    fn get_dimensions(&self) -> io::Result<WindowSize>;
     fn event_reader(&self) -> EventReader;
     /// Checks if there is an `Event` available.
     ///

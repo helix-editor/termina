@@ -91,7 +91,7 @@ impl Parser {
 mod windows {
     use windows_sys::Win32::System::Console;
 
-    use crate::OneBased;
+    use crate::{OneBased, WindowSize};
 
     use super::*;
 
@@ -125,7 +125,10 @@ mod windows {
                         let Some(cols) = OneBased::new(record.dwSize.X as u16) else {
                             continue;
                         };
-                        self.events.push_back(Event::WindowResized { rows, cols });
+                        self.events.push_back(Event::WindowResized(WindowSize {
+                            rows: rows.get(),
+                            cols: cols.get(),
+                        }));
                     }
                     _ => (),
                 }

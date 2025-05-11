@@ -59,3 +59,16 @@ impl From<NonZeroU16> for OneBased {
         Self(n)
     }
 }
+
+/// The dimensions of a terminal screen.
+///
+/// For both Unix and Windows, Termina returns the width and height
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct WindowSize {
+    /// The width - the number of columns.
+    #[doc(alias = "width")]
+    pub cols: u16,
+    /// The height - the number of rows.
+    #[doc(alias = "height")]
+    pub rows: u16,
+}

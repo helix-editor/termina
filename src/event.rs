@@ -4,7 +4,7 @@
 
 use crate::{
     escape::{csi::Csi, dcs::Dcs},
-    OneBased,
+    WindowSize,
 };
 
 pub(crate) mod reader;
@@ -17,10 +17,7 @@ pub enum Event {
     Key(KeyEvent),
     Mouse(MouseEvent),
     /// The window was resized to the given dimensions.
-    WindowResized {
-        rows: OneBased,
-        cols: OneBased,
-    },
+    WindowResized(WindowSize),
     FocusIn,
     FocusOut,
     /// A "bracketed" paste.

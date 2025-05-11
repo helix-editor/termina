@@ -5,7 +5,7 @@ use std::{
     os::unix::prelude::*,
 };
 
-use crate::{event::source::UnixEventSource, Event, EventReader, OneBased};
+use crate::{event::source::UnixEventSource, Event, EventReader, WindowSize};
 
 use super::Terminal;
 
@@ -81,6 +81,15 @@ fn open_pty() -> io::Result<(FileDescriptor, FileDescriptor)> {
     Ok((read, write))
 }
 
+impl From<termios::Winsize> for WindowSize {
+    fn from(size: termios::Winsize) -> Self {
+        Self {
+            cols: size.ws_col,
+            rows: size.ws_row,
+        }
+    }
+}
+
 // CREDIT: <https://github.com/wezterm/wezterm/blob/a87358516004a652ad840bc1661bdf65ffc89b43/termwiz/src/terminal/unix.rs>
 // Some discussion, though: Termwiz's terminals combine the terminal interaction (reading
 // dimensions, reading events, writing bytes, etc.) all in one type. Crossterm splits these
@@ -139,12 +148,9 @@ impl Terminal for UnixTerminal {
         Ok(())
     }
 
-    fn get_dimensions(&self) -> io::Result<(OneBased, OneBased)> {
+    fn get_dimensions(&self) -> io::Result<WindowSize> {
         let winsize = termios::tcgetwinsize(self.write.get_ref())?;
-        // winsize is already one-based.
-        let rows = OneBased::new(winsize.ws_row).unwrap();
-        let cols = OneBased::new(winsize.ws_col).unwrap();
-        Ok((rows, cols))
+        Ok(winsize.into())
     }
 
     fn event_reader(&self) -> EventReader {
