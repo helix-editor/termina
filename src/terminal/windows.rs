@@ -1,6 +1,6 @@
 use std::{
-    fs,
-    io::{self, BufWriter, Write as _},
+    fs::{self, File},
+    io::{self, BufWriter, IsTerminal as _, Write as _},
     mem,
     os::windows::prelude::*,
     ptr,
@@ -46,13 +46,54 @@ const CP_UTF8: CodePageID = 65001;
 // the `InputHandle` and `OutputHandle`.
 
 #[derive(Debug)]
+pub enum Handle {
+    Owned(OwnedHandle),
+    Borrowed(BorrowedHandle<'static>),
+}
+
+impl AsRawHandle for Handle {
+    fn as_raw_handle(&self) -> RawHandle {
+        match self {
+            Self::Owned(handle) => handle.as_raw_handle(),
+            Self::Borrowed(handle) => handle.as_raw_handle(),
+        }
+    }
+}
+
+impl Handle {
+    pub fn stdin() -> Self {
+        let stdin = io::stdin().as_raw_handle();
+        Self::Borrowed(unsafe { BorrowedHandle::borrow_raw(stdin) })
+    }
+
+    pub fn stdout() -> Self {
+        let stdout = io::stdout().as_raw_handle();
+        Self::Borrowed(unsafe { BorrowedHandle::borrow_raw(stdout) })
+    }
+
+    pub fn try_clone(&self) -> io::Result<Self> {
+        let this = match self {
+            Self::Owned(handle) => Self::Owned(handle.try_clone()?),
+            Self::Borrowed(handle) => Self::Borrowed(*handle),
+        };
+        Ok(this)
+    }
+}
+
+impl From<File> for Handle {
+    fn from(file: File) -> Self {
+        Self::Owned(OwnedHandle::from(file))
+    }
+}
+
+#[derive(Debug)]
 pub(crate) struct InputHandle {
-    handle: OwnedHandle,
+    handle: Handle,
 }
 
 impl InputHandle {
-    fn new<H: Into<OwnedHandle>>(h: H) -> Self {
-        Self { handle: h.into() }
+    fn new(handle: Handle) -> Self {
+        Self { handle }
     }
 
     fn try_clone(&self) -> io::Result<Self> {
@@ -151,12 +192,12 @@ impl AsRawHandle for InputHandle {
 
 #[derive(Debug)]
 pub struct OutputHandle {
-    handle: OwnedHandle,
+    handle: Handle,
 }
 
 impl OutputHandle {
-    fn new<H: Into<OwnedHandle>>(h: H) -> Self {
-        Self { handle: h.into() }
+    fn new(handle: Handle) -> Self {
+        Self { handle }
     }
 
     fn get_mode(&self) -> io::Result<CONSOLE_MODE> {
@@ -248,20 +289,22 @@ impl io::Write for OutputHandle {
 }
 
 fn open_pty() -> io::Result<(InputHandle, OutputHandle)> {
-    // TODO: attempt to handle stdin/stdout?
-    let input = InputHandle::new(
-        fs::OpenOptions::new()
+    let (input, output) = if io::stdin().is_terminal() {
+        (Handle::stdin(), Handle::stdout())
+    } else {
+        let input = fs::OpenOptions::new()
             .read(true)
             .write(true)
-            .open("CONIN$")?,
-    );
-    let output = OutputHandle::new(
-        fs::OpenOptions::new()
+            .open("CONIN$")?
+            .into();
+        let output = fs::OpenOptions::new()
             .read(true)
             .write(true)
-            .open("CONOUT$")?,
-    );
-    Ok((input, output))
+            .open("CONOUT$")?
+            .into();
+        (input, output)
+    };
+    Ok((InputHandle::new(input), OutputHandle::new(output)))
 }
 
 // CREDIT: Again, like the UnixTerminal in the unix module this is mostly based on WezTerm but
