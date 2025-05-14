@@ -256,6 +256,8 @@ impl OutputHandle {
         Ok(WindowSize {
             rows: rows.get(),
             cols: cols.get(),
+            pixel_width: None,
+            pixel_height: None,
         })
     }
 }

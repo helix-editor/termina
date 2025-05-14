@@ -128,6 +128,8 @@ mod windows {
                         self.events.push_back(Event::WindowResized(WindowSize {
                             rows: rows.get(),
                             cols: cols.get(),
+                            pixel_width: None,
+                            pixel_height: None,
                         }));
                     }
                     _ => (),

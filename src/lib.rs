@@ -62,7 +62,8 @@ impl From<NonZeroU16> for OneBased {
 
 /// The dimensions of a terminal screen.
 ///
-/// For both Unix and Windows, Termina returns the width and height
+/// For both Unix and Windows, Termina returns the rows and columns.
+/// Pixel width and height are not supported on Windows.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct WindowSize {
     /// The width - the number of columns.
@@ -71,4 +72,8 @@ pub struct WindowSize {
     /// The height - the number of rows.
     #[doc(alias = "height")]
     pub rows: u16,
+    /// The height of the window in pixels.
+    pub pixel_width: Option<u16>,
+    /// The width of the window in pixels.
+    pub pixel_height: Option<u16>,
 }
