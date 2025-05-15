@@ -86,6 +86,8 @@ impl From<termios::Winsize> for WindowSize {
         Self {
             cols: size.ws_col,
             rows: size.ws_row,
+            pixel_width: Some(size.ws_xpixel),
+            pixel_height: Some(size.ws_ypixel),
         }
     }
 }
