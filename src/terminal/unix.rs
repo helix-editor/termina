@@ -62,16 +62,15 @@ impl io::Write for FileDescriptor {
 }
 
 fn open_pty() -> io::Result<(FileDescriptor, FileDescriptor)> {
-    let (read, write) = if io::stdin().is_terminal() {
-        (FileDescriptor::STDIN, FileDescriptor::STDOUT)
+    let read = if io::stdin().is_terminal() {
+        FileDescriptor::STDIN
     } else {
-        let file = fs::OpenOptions::new()
-            .read(true)
-            .write(true)
-            .open("/dev/tty")?;
-        let read = FileDescriptor::Owned(file.into());
-        let write = read.try_clone()?;
-        (read, write)
+        open_dev_tty()?
+    };
+    let write = if io::stdout().is_terminal() {
+        FileDescriptor::STDOUT
+    } else {
+        open_dev_tty()?
     };
 
     // Activate non-blocking mode for the reader.
@@ -79,6 +78,14 @@ fn open_pty() -> io::Result<(FileDescriptor, FileDescriptor)> {
     // rustix::io::ioctl_fionbio(&read, true)?;
 
     Ok((read, write))
+}
+
+fn open_dev_tty() -> io::Result<FileDescriptor> {
+    let file = fs::OpenOptions::new()
+        .read(true)
+        .write(true)
+        .open("/dev/tty")?;
+    Ok(FileDescriptor::Owned(file.into()))
 }
 
 impl From<termios::Winsize> for WindowSize {

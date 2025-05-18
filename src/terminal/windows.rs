@@ -293,22 +293,21 @@ impl io::Write for OutputHandle {
 }
 
 fn open_pty() -> io::Result<(InputHandle, OutputHandle)> {
-    let (input, output) = if io::stdin().is_terminal() {
-        (Handle::stdin(), Handle::stdout())
+    let input = if io::stdin().is_terminal() {
+        Handle::stdin()
     } else {
-        let input = fs::OpenOptions::new()
-            .read(true)
-            .write(true)
-            .open("CONIN$")?
-            .into();
-        let output = fs::OpenOptions::new()
-            .read(true)
-            .write(true)
-            .open("CONOUT$")?
-            .into();
-        (input, output)
+        open_file("CONIN$")?.into()
+    };
+    let output = if io::stdout().is_terminal() {
+        Handle::stdout()
+    } else {
+        open_file("CONOUT$")?.into()
     };
     Ok((InputHandle::new(input), OutputHandle::new(output)))
+}
+
+fn open_file(path: &str) -> io::Result<File> {
+    fs::OpenOptions::new().read(true).write(true).open(path)
 }
 
 // CREDIT: Again, like the UnixTerminal in the unix module this is mostly based on WezTerm but
