@@ -204,17 +204,16 @@ impl Display for Sgr {
                 let mut ps_written = 0;
                 let mut first = true;
                 let mut write = |sgr: Self, n_ps: u16| {
-                    if !first {
-                        f.write_str(";")?;
-                    }
-                    first = false;
                     // If writing this parameter would exceed the budget, finish this CSI sequence
                     // and start a new one which will start with this SGR.
                     ps_written += n_ps;
                     if ps_written > ps_budget {
                         write!(f, "m{}", super::CSI)?;
                         ps_written = n_ps;
+                    } else if !first {
+                        f.write_str(";")?;
                     }
+                    first = false;
                     write!(f, "{sgr}")
                 };
                 if attributes.modifiers.contains(Mod::RESET) {
@@ -1506,7 +1505,7 @@ mod test {
         };
         // The sequence must be chunked into two since the chunk size is exceeded.
         // Here it is perfectly chunked so that the foreground and background are a full chunk.
-        let expected = "\x1b[38;2;80;100;120;48;2;80;100;120;m\x1b[58:2::80:100:120;4:3m";
+        let expected = "\x1b[38;2;80;100;120;48;2;80;100;120m\x1b[58:2::80:100:120;4:3m";
         assert_eq!(expected, Csi::Sgr(Sgr::Attributes(attributes)).to_string());
         // If we make the chunk size bigger, we still chunk the same way. We wouldn't cut an SGR
         // sequence up in the middle: that would make it nonsense.
