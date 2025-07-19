@@ -41,7 +41,7 @@ impl EventSource for WindowsEventSource {
 
         let timeout = PollTimeout::new(timeout);
 
-        while timeout.leftover().map_or(true, |t| !t.is_zero()) {
+        loop {
             if let Some(event) = self.parser.pop() {
                 return Ok(Some(event));
             }
@@ -81,6 +81,10 @@ impl EventSource for WindowsEventSource {
             let records = self.input.read_console_input(pending)?;
 
             self.parser.decode_input_records(&records);
+
+            if timeout.leftover().is_some_and(|t| t.is_zero()) {
+                break;
+            }
         }
 
         Ok(None)

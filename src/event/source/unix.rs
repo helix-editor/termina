@@ -82,7 +82,7 @@ impl EventSource for UnixEventSource {
     fn try_read(&mut self, timeout: Option<Duration>) -> io::Result<Option<Event>> {
         let timeout = PollTimeout::new(timeout);
 
-        while timeout.leftover().map_or(true, |t| !t.is_zero()) {
+        loop {
             if let Some(event) = self.parser.pop() {
                 return Ok(Some(event));
             }
@@ -135,6 +135,10 @@ impl EventSource for UnixEventSource {
                     io::ErrorKind::Interrupted,
                     "Poll operation was woken up",
                 ));
+            }
+
+            if timeout.leftover().is_some_and(|t| t.is_zero()) {
+                break;
             }
         }
 
