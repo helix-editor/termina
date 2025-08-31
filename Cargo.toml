@@ -32,7 +32,8 @@ features = [
 ]
 
 [target.'cfg(windows)'.dependencies.windows-sys]
-version = "0.59"
+# TODO: this could probably be loosened.
+version = ">=0.59"
 default-features = false
 # https://microsoft.github.io/windows-rs/features/#/0.59.0/search
 features = [
