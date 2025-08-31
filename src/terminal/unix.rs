@@ -159,7 +159,32 @@ impl Terminal for UnixTerminal {
 
     fn get_dimensions(&self) -> io::Result<WindowSize> {
         let winsize = termios::tcgetwinsize(self.write.get_ref())?;
-        Ok(winsize.into())
+        let mut size: WindowSize = winsize.into();
+        // Over a serial connection for example, the ioctl may quietly fail by returning zeroed
+        // rows and columns. Fall back to reading LINES/COLUMNS.
+        // <https://github.com/vim/vim/blob/b88f9e4a04ce9fb70abb7cdae17688aa4f49c8c9/src/os_unix.c#L4349-L4370>
+        if size.cols == 0 || size.rows == 0 {
+            if let Some(rows) = std::env::var("LINES")
+                .ok()
+                .and_then(|l| l.parse::<u16>().ok())
+            {
+                size.rows = rows;
+            }
+            if let Some(cols) = std::env::var("COLUMNS")
+                .ok()
+                .and_then(|c| c.parse::<u16>().ok())
+            {
+                size.cols = cols;
+            }
+        }
+        if size.cols == 0 || size.rows == 0 {
+            Err(io::Error::new(
+                io::ErrorKind::Other,
+                "cannot read non-zero cols/rows from ioctl or COLUMNS/LINES environment variables",
+            ))
+        } else {
+            Ok(size)
+        }
     }
 
     fn event_reader(&self) -> EventReader {
