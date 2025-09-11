@@ -190,6 +190,7 @@ fn poll(fds: [BorrowedFd<'_>; 3], timeout: Option<Duration>) -> std::io::Result<
         ])
     }
 
+    #[cfg(not(target_os = "illumos"))]
     #[cfg_attr(not(target_os = "macos"), allow(dead_code))]
     fn select2(fds: [BorrowedFd<'_>; 3], timeout: Option<&Timespec>) -> io::Result<[bool; 3]> {
         use rustix::event::{fd_set_insert, fd_set_num_elements, FdSetElement, FdSetIter};
