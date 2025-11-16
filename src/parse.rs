@@ -1,14 +1,23 @@
-// CREDIT: This is nearly all crossterm (with modifications and additions).
-// <https://github.com/crossterm-rs/crossterm/blob/36d95b26a26e64b0f8c12edfe11f410a6d56a812/src/event/sys/unix/parse.rs>
-// See a below credit comment about the `decode_input_records` function however.
-// I have extended the parsing functions from
-//
-// Crossterm comments say that the parser is a bit scary and probably in need of a refactor. I
-// like this approach though since it's quite easy to read and test. I'm unsure of the performance
-// though because of the loop in `process_bytes`: we consider the bytes as an increasing slice of
-// the buffer until it becomes valid or invalid. WezTerm and Alacritty have more formal parsers
-// (`vtparse` and `vte`, respectively) but I'm unsure of using a terminal program's parser since
-// it may be larger or more complex than an application needs.
+//! Streaming parser for terminal input bytes.
+//!
+//! [`Parser`] turns bytes from a terminal or PTY into [`Event`] values. It accepts partial input:
+//! callers append bytes with [`Parser::parse`], then drain completed events with [`Parser::pop`].
+//! This is the same parser used behind [`EventReader`], exposed for code that owns its input source
+//! directly.
+//!
+//! # Implementation Notes
+//!
+//! The parser is adapted from [crossterm's Unix event parser], with additions for Termina-specific
+//! escape sequences and Windows input modes. Crossterm comments call this style of parser a bit
+//! scary and probably in need of a refactor. I like the approach though, because it is quite easy
+//! to read and test. The main uncertainty is performance: `process_bytes` considers the bytes as an
+//! increasing slice of the buffer until that slice becomes valid or invalid. WezTerm and Alacritty
+//! use more formal parsers, [`vtparse`] and [`vte`] respectively, but those terminal-emulator
+//! parsers may be larger or more complex than an application needs.
+//!
+//! [crossterm's Unix event parser]: https://docs.rs/crossterm/latest/crossterm/event/index.html
+//! [`vtparse`]: https://docs.rs/vtparse/latest/vtparse/
+//! [`vte`]: https://docs.rs/vte/latest/vte/
 
 #[cfg(windows)]
 pub mod windows;
@@ -19,6 +28,9 @@ use windows::legacy;
 use windows::InputReaderMode;
 
 use std::{collections::VecDeque, num::NonZeroU16, str};
+
+#[cfg(doc)]
+use crate::EventReader;
 
 use crate::{
     escape::{
@@ -33,11 +45,25 @@ use crate::{
     style, Event,
 };
 
-/// A parser for ANSI escape sequences.
+/// An incremental parser for terminal input.
+///
+/// The parser keeps incomplete escape sequences in an internal buffer. Pass `maybe_more = true`
+/// when the current byte slice may end in the middle of a sequence. Completed events are queued
+/// until [`Self::pop`] removes them.
+///
+/// # Examples
+///
+/// ```
+/// use termina::{Event, Parser};
+///
+/// let mut parser = Parser::default();
+/// parser.parse(b"\x1b[5~", false);
+/// assert!(matches!(parser.pop(), Some(Event::Key(_))));
+/// ```
 #[derive(Debug)]
 pub struct Parser {
     buffer: Vec<u8>,
-    /// Events which have been parsed. Pop out with `Self::pop`.
+    /// Events which have been parsed. Pop out with [`Self::pop`].
     events: VecDeque<Event>,
     #[cfg(windows)]
     mode: InputReaderMode,
@@ -73,15 +99,16 @@ impl Parser {
         }
     }
 
-    /// Reads and removes a parsed event from the parser.
+    /// Removes and returns the oldest completed event.
     pub fn pop(&mut self) -> Option<Event> {
         self.events.pop_front()
     }
 
-    /// Parses additional data into the buffer.
-    /// Parsed events can be retrieved using [Parser::pop].
+    /// Adds bytes to the parser and queues any completed events.
     ///
-    /// `maybe_more` should be set to true if the input might be a partial sequence.
+    /// Set `maybe_more` to `true` when the input source may provide more bytes for the same
+    /// escape sequence later. Set it to `false` when the buffer should be treated as complete for
+    /// now; malformed or incomplete sequences can then be discarded instead of held indefinitely.
     pub fn parse(&mut self, bytes: &[u8], maybe_more: bool) {
         self.buffer.extend_from_slice(bytes);
         self.process_bytes(maybe_more);

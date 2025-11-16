@@ -1,14 +1,54 @@
+//! Device Control String (DCS) escape sequences.
+//!
+//! Device Control String sequences are framed by [`DCS`] and [`ST`]. Termina currently models the
+//! [DECRQSS] request and [DECRPSS] response forms used for terminal state queries.
+//!
+//! # Examples
+//!
+//! ```
+//! use termina::escape::dcs::{Dcs, DcsRequest};
+//!
+//! let request = Dcs::Request(DcsRequest::GraphicRendition);
+//! assert_eq!(request.to_string(), "\x1bP$qm\x1b\\");
+//! ```
+//!
+//! [`DCS`]: super::DCS
+//! [DECRPSS]: https://vt100.net/docs/vt510-rm/DECRPSS.html
+//! [DECRQSS]: https://vt100.net/docs/vt510-rm/DECRQSS.html
+//! [`ST`]: super::ST
+
 use std::fmt::{self, Display};
 
 use crate::style::CursorStyle;
 
+#[cfg(doc)]
+use crate::escape::csi::Sgr;
+
+/// A Device Control String command.
+///
+/// Termina uses DCS for terminal state queries that have structured request and response forms.
+/// Formatting writes the DCS introducer, the request or response payload, and the string
+/// terminator.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Dcs {
-    // DECRQSS: <https://vt100.net/docs/vt510-rm/DECRQSS.html>
+    /// Request a terminal setting with [DECRQSS] using a [`DcsRequest`] selector.
+    ///
+    /// For example, [`DcsRequest::GraphicRendition`] asks for the current [`Sgr`] state.
+    ///
+    /// [DECRQSS]: https://vt100.net/docs/vt510-rm/DECRQSS.html
     Request(DcsRequest),
-    // DECRPSS: <https://vt100.net/docs/vt510-rm/DECRPSS.html>
+
+    /// Report a terminal setting with [DECRPSS] using a [`DcsResponse`] payload.
+    ///
+    /// Terminals use this response to answer a DECRQSS request. A valid response contains the
+    /// setting encoded as the terminal would send it in the corresponding control sequence.
+    ///
+    /// [DECRPSS]: https://vt100.net/docs/vt510-rm/DECRPSS.html
     Response {
+        /// Whether the terminal recognized the original request.
         is_request_valid: bool,
+
+        /// The setting value returned by the terminal.
         value: DcsResponse,
     },
 }
@@ -31,36 +71,69 @@ impl Display for Dcs {
     }
 }
 
+/// Request selectors for [DECRQSS].
+///
+/// Each variant names the setting being queried and shows the selector bytes sent after `DCS $ q`.
+/// The selector bytes come from [DECRQSS].
+///
+/// [DECRQSS]: https://vt100.net/docs/vt510-rm/DECRQSS.html
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum DcsRequest {
+    /// DECRQSS `$}`: request the active status display.
     ActiveStatusDisplay,
+    /// DECRQSS `*x`: request the attribute change extent.
     AttributeChangeExtent,
+    /// DECRQSS `"q`: request the character attribute.
     CharacterAttribute,
+    /// DECRQSS `"p`: request the conformance level.
     ConformanceLevel,
+    /// DECRQSS `$|`: request the number of columns per page.
     ColumnsPerPage,
+    /// DECRQSS `t`: request the number of lines per page.
     LinesPerPage,
+    /// DECRQSS `*|`: request the number of lines per screen.
     NumberOfLinesPerScreen,
+    /// DECRQSS `$~`: request the status line type.
     StatusLineType,
+    /// DECRQSS `s`: request the left and right margins.
     LeftAndRightMargins,
+    /// DECRQSS `r`: request the top and bottom margins.
     TopAndBottomMargins,
-    /// SGR
+    /// DECRQSS `m`: request [`Sgr`] state.
     GraphicRendition,
+    /// DECRQSS `p`: request the setup language.
     SetUpLanguage,
+    /// DECRQSS `$s`: request the printer type.
     PrinterType,
+    /// DECRQSS `"t`: request the refresh rate.
     RefreshRate,
+    /// DECRQSS `(p`: request the digital printed data type.
     DigitalPrintedDataType,
+    /// DECRQSS `*p`: request the ProPrinter character set.
     ProPrinterCharacterSet,
+    /// DECRQSS `*r`: request the communication speed.
     CommunicationSpeed,
+    /// DECRQSS `*u`: request the communication port.
     CommunicationPort,
+    /// DECRQSS ` p`: request the scroll speed.
     ScrollSpeed,
+    /// DECRQSS ` q`: request the cursor style.
     CursorStyle,
+    /// DECRQSS ` r`: request the key-click volume.
     KeyClickVolume,
+    /// DECRQSS ` t`: request the warning-bell volume.
     WarningBellVolume,
+    /// DECRQSS ` u`: request the margin-bell volume.
     MarginBellVolume,
+    /// DECRQSS ` v`: request the lock-key style.
     LockKeyStyle,
+    /// DECRQSS `*s`: request the flow-control type.
     FlowControlType,
+    /// DECRQSS `$q`: request the disconnect delay time.
     DisconnectDelayTime,
+    /// DECRQSS `"u`: request the transmit-rate limit.
     TransmitRateLimit,
+    /// DECRQSS `+w`: request the port parameter.
     PortParameter,
 }
 
@@ -101,10 +174,26 @@ impl Display for DcsRequest {
     }
 }
 
+/// Response payloads from [DECRPSS] parsed by Termina.
+///
+/// [DECRPSS] is the response form terminals use for [DECRQSS] status-string queries.
+///
+/// [DECRPSS]: https://vt100.net/docs/vt510-rm/DECRPSS.html
+/// [DECRQSS]: https://vt100.net/docs/vt510-rm/DECRQSS.html
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum DcsResponse {
-    /// SGR
+    /// A DECRPSS response containing [`Sgr`] attributes.
+    ///
+    /// [`DcsRequest::GraphicRendition`] produces this response. The payload carries the same
+    /// values that would appear in a [`Sgr`] sequence.
+    ///
+    /// [`Sgr`]: crate::escape::csi::Sgr
     GraphicRendition(Vec<super::csi::Sgr>),
+
+    /// A DECRPSS response containing the terminal's current cursor style.
+    ///
+    /// [`DcsRequest::CursorStyle`] produces this response. The payload corresponds to the
+    /// [`CursorStyle`] setting.
     CursorStyle(CursorStyle),
     // There are others but adding them would mean adding a lot of parsing code...
 }

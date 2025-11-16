@@ -17,7 +17,10 @@ const BUF_SIZE: usize = 4096;
 
 #[derive(Debug)]
 pub enum FileDescriptor {
+    /// A file descriptor owned by Termina.
     Owned(OwnedFd),
+
+    /// A borrowed process-global file descriptor such as stdin or stdout.
     Borrowed(BorrowedFd<'static>),
 }
 
@@ -31,7 +34,10 @@ impl AsFd for FileDescriptor {
 }
 
 impl FileDescriptor {
+    /// The process stdin file descriptor.
     pub const STDIN: Self = Self::Borrowed(rustix::stdio::stdin());
+
+    /// The process stdout file descriptor.
     pub const STDOUT: Self = Self::Borrowed(rustix::stdio::stdout());
 
     fn try_clone(&self) -> io::Result<Self> {
@@ -99,15 +105,21 @@ impl From<termios::Winsize> for WindowSize {
     }
 }
 
-// CREDIT: <https://github.com/wezterm/wezterm/blob/a87358516004a652ad840bc1661bdf65ffc89b43/termwiz/src/terminal/unix.rs>
-// Some discussion, though: Termwiz's terminals combine the terminal interaction (reading
-// dimensions, reading events, writing bytes, etc.) all in one type. Crossterm splits these
-// concerns and I prefer that interface. As such this type is very much based on Termwiz'
-// `UnixTerminal` but the responsibilities are split between this file and
-// `src/event/source/unix.rs` - the latter being more inspired by crossterm.
-// Ultimately this terminal doesn't look much like Termwiz' due to the use of `rustix` and
-// differences in the trait and `Drop` behavior (see `super`'s CREDIT comment).
-
+/// Unix terminal handle.
+///
+/// `UnixTerminal` writes to stdout or `/dev/tty`, reads events from stdin or `/dev/tty`, and
+/// restores the captured termios state when dropped.
+///
+/// # Implementation Notes
+///
+/// This type is based on [termwiz's Unix terminal], but Termina splits responsibilities
+/// differently. TermWiz combines terminal dimensions, event reading, byte output, and terminal
+/// state in one terminal type. Termina keeps byte output and terminal mode management here, while
+/// event-source details live in `src/event/source/unix.rs`, closer to crossterm's event-source
+/// shape. The implementation also uses `rustix` and has different `Drop` behavior, so it no longer
+/// looks much like the original TermWiz code.
+///
+/// [termwiz's Unix terminal]: https://docs.rs/termwiz/latest/termwiz/terminal/index.html
 #[derive(Debug)]
 pub struct UnixTerminal {
     /// Shared wrapper around the reader (stdin or `/dev/tty`)
@@ -120,6 +132,10 @@ pub struct UnixTerminal {
 }
 
 impl UnixTerminal {
+    /// Opens the Unix terminal for input and output.
+    ///
+    /// If stdin or stdout is not a terminal, Termina opens `/dev/tty` for that side. The original
+    /// termios state is captured so [`Terminal::enter_cooked_mode`] and `Drop` can restore it.
     pub fn new() -> io::Result<Self> {
         let (read, write) = open_pty()?;
         let source = UnixEventSource::new(read, write.try_clone()?)?;
