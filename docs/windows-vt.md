@@ -118,11 +118,10 @@ use windows_sys::Win32::System::Console::{
 };
 use std::mem;
 
-let mut num_to_read = 0;
-unsafe { GetNumberOfConsoleInputEvents(output.handle.as_raw_handle(), &mut num_to_read) };
-let mut records = Vec::with_capacity(num_to_read as usize);
+let mut capacity = 128;
+let mut records = Vec::with_capacity(capacity);
 let zeroed: INPUT_RECORD = unsafe { mem::zeroed() };
-records.resize(num_to_read as usize, zeroed);
+records.resize(capacity, zeroed);
 let mut num_read = 0;
 unsafe {
     ReadConsoleInputA(output.handle.as_raw_handle(), records.as_mut_ptr(), new_to_read, &mut num_read);

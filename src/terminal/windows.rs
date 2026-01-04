@@ -1,4 +1,5 @@
 use std::{
+    fmt,
     fs::{self, File},
     io::{self, BufWriter, IsTerminal as _, Write as _},
     mem,
@@ -86,19 +87,31 @@ impl From<File> for Handle {
     }
 }
 
-#[derive(Debug)]
 pub(crate) struct InputHandle {
     handle: Handle,
+    input_buf: Vec<INPUT_RECORD>,
+}
+
+impl fmt::Debug for InputHandle {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("InputHandle")
+            .field("handle", &self.handle)
+            .finish_non_exhaustive()
+    }
 }
 
 impl InputHandle {
     fn new(handle: Handle) -> Self {
-        Self { handle }
+        let mut input_buf = Vec::with_capacity(BUF_SIZE);
+        let zeroed: INPUT_RECORD = unsafe { mem::zeroed() };
+        input_buf.resize(BUF_SIZE, zeroed);
+        Self { handle, input_buf }
     }
 
     fn try_clone(&self) -> io::Result<Self> {
         Ok(Self {
             handle: self.handle.try_clone()?,
+            input_buf: self.input_buf.clone(),
         })
     }
 
@@ -145,21 +158,23 @@ impl InputHandle {
         Ok(())
     }
 
-    pub fn get_number_of_input_events(&mut self) -> io::Result<usize> {
+    pub fn has_pending_input_events(&mut self) -> io::Result<bool> {
         let mut num = 0;
+        // Since we use UTF-8 code pages and call ReadConsoleInputA to read UTF-8 data,
+        // we can't rely on the result from GetNumberOfConsoleInputEvents.
+        // Its return value matches the result from ReadConsoleInputW, which may not be the
+        // same when typing some Unicode values.
+        // Instead, we can just use it as a quick check to see if events are available.
         if unsafe { GetNumberOfConsoleInputEvents(self.as_raw_handle(), &mut num) } == 0 {
             bail!(
                 "failed to read input console number of pending events: {}",
                 io::Error::last_os_error()
             );
         }
-        Ok(num as usize)
+        Ok(num > 0)
     }
 
-    pub fn read_console_input(&mut self, num_events: usize) -> io::Result<Vec<INPUT_RECORD>> {
-        let mut res = Vec::with_capacity(num_events);
-        let zeroed: INPUT_RECORD = unsafe { mem::zeroed() };
-        res.resize(num_events, zeroed);
+    pub fn read_console_input(&mut self) -> io::Result<&[INPUT_RECORD]> {
         let mut num = 0;
         // NOTE: <https://learn.microsoft.com/en-us/windows/console/classic-vs-vt#unicode>
         // > UTF-8 support in the console can be utilized via the A variant of Console APIs
@@ -168,8 +183,8 @@ impl InputHandle {
         if unsafe {
             ReadConsoleInputA(
                 self.as_raw_handle(),
-                res.as_mut_ptr(),
-                num_events as u32,
+                self.input_buf.as_mut_ptr(),
+                self.input_buf.capacity() as u32,
                 &mut num,
             )
         } == 0
@@ -179,8 +194,8 @@ impl InputHandle {
                 io::Error::last_os_error()
             );
         }
-        unsafe { res.set_len(num as usize) };
-        Ok(res)
+        unsafe { self.input_buf.set_len(num as usize) };
+        Ok(&self.input_buf)
     }
 }
 

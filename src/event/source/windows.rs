@@ -46,9 +46,9 @@ impl EventSource for WindowsEventSource {
                 return Ok(Some(event));
             }
 
-            let mut pending = self.input.get_number_of_input_events()?;
+            let has_pending = self.input.has_pending_input_events()?;
 
-            if pending == 0 {
+            if !has_pending {
                 let mut handles = [self.input.as_raw_handle(), self.waker.as_raw_handle()];
                 let wait = timeout
                     .leftover()
@@ -58,9 +58,7 @@ impl EventSource for WindowsEventSource {
                     WaitForMultipleObjects(handles.len() as u32, handles.as_mut_ptr(), 0, wait)
                 };
 
-                if result == WAIT_OBJECT_0 {
-                    pending = self.input.get_number_of_input_events()?;
-                } else if result == WAIT_OBJECT_0 + 1 {
+                if result == WAIT_OBJECT_0 + 1 {
                     return Err(io::Error::new(
                         io::ErrorKind::Interrupted,
                         "Poll operation was woken up",
@@ -78,9 +76,9 @@ impl EventSource for WindowsEventSource {
                 }
             }
 
-            let records = self.input.read_console_input(pending)?;
+            let records = self.input.read_console_input()?;
 
-            self.parser.decode_input_records(&records);
+            self.parser.decode_input_records(records);
 
             if timeout.leftover().is_some_and(|t| t.is_zero()) {
                 break;
