@@ -15,6 +15,10 @@ pub enum Osc<'a> {
     ClearSelection(Selection),
     QuerySelection(Selection),
     SetSelection(Selection, &'a str),
+    SetBackgroundColor(u8, u8, u8),
+    SetForegroundColor(u8, u8, u8),
+    ClearBackgroundColor,
+    ClearForegroundColor,
     // TODO: I didn't copy many available commands yet...
 }
 
@@ -33,6 +37,10 @@ impl Display for Osc<'_> {
                 // TODO: it'd be nice to avoid allocating a string to base64 encode.
                 write!(f, "52;{selection};{}", base64::encode(content.as_bytes()))?
             }
+            Self::SetForegroundColor(r, g, b) => write!(f, "10;#{:02x}{:02x}{:02x}", r, g, b)?,
+            Self::SetBackgroundColor(r, g, b) => write!(f, "11;#{:02x}{:02x}{:02x}", r, g, b)?,
+            Self::ClearForegroundColor => write!(f, "110")?,
+            Self::ClearBackgroundColor => write!(f, "111")?,
         }
         f.write_str(super::ST)?;
         Ok(())
