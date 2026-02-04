@@ -4,7 +4,7 @@
 
 use std::fmt::{self, Display};
 
-use crate::base64;
+use crate::{base64, style::RgbColor};
 
 pub enum Osc<'a> {
     SetIconNameAndWindowTitle(&'a str),
@@ -15,8 +15,8 @@ pub enum Osc<'a> {
     ClearSelection(Selection),
     QuerySelection(Selection),
     SetSelection(Selection, &'a str),
-    SetBackgroundColor(u8, u8, u8),
-    SetForegroundColor(u8, u8, u8),
+    SetBackgroundColor(RgbColor),
+    SetForegroundColor(RgbColor),
     ClearBackgroundColor,
     ClearForegroundColor,
     // TODO: I didn't copy many available commands yet...
@@ -37,8 +37,16 @@ impl Display for Osc<'_> {
                 // TODO: it'd be nice to avoid allocating a string to base64 encode.
                 write!(f, "52;{selection};{}", base64::encode(content.as_bytes()))?
             }
-            Self::SetForegroundColor(r, g, b) => write!(f, "10;#{:02x}{:02x}{:02x}", r, g, b)?,
-            Self::SetBackgroundColor(r, g, b) => write!(f, "11;#{:02x}{:02x}{:02x}", r, g, b)?,
+            Self::SetForegroundColor(color) => write!(
+                f,
+                "10;#{:02x}{:02x}{:02x}",
+                color.red, color.green, color.blue
+            )?,
+            Self::SetBackgroundColor(color) => write!(
+                f,
+                "11;#{:02x}{:02x}{:02x}",
+                color.red, color.green, color.blue
+            )?,
             Self::ClearForegroundColor => write!(f, "110")?,
             Self::ClearBackgroundColor => write!(f, "111")?,
         }
