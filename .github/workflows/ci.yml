@@ -15,7 +15,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout sources
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
 
       - name: Install toolchain
         uses: dtolnay/rust-toolchain@master
@@ -37,7 +37,7 @@ jobs:
         os: [ubuntu-latest, macos-latest, windows-latest, ubuntu-24.04-arm]
     steps:
       - name: Checkout sources
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
 
       - name: Install MSRV toolchain
         uses: dtolnay/rust-toolchain@master
@@ -60,7 +60,7 @@ jobs:
         os: [ubuntu-latest, macos-latest, windows-latest]
     steps:
       - name: Checkout sources
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
 
       - name: Install MSRV toolchain
         uses: dtolnay/rust-toolchain@master
