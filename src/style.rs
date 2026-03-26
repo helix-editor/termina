@@ -127,7 +127,7 @@ impl FromStr for RgbColor {
                 return Err(InvalidFormatError);
             };
             Ok(Self::new(r, g, b))
-        } else if let Some(hex) = s.strip_prefix("#") {
+        } else if let Some(hex) = s.strip_prefix('#') {
             let (r, g, b) = match hex.len() {
                 3 => (
                     Self::channel_from_hex(&hex[0..1])?,
