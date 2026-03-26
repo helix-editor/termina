@@ -456,7 +456,58 @@ impl Default for SgrModifiers {
 
 // Cursor
 
+/// The cursor shape for the kitty multi-cursor protocol.
+/// This represents either a specific `CursorStyle` (protocol values 0-6)
+/// or the special "follow main cursor" value (protocol value 29).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum MultiCursorShape {
+    Style(CursorStyle),
+    FollowMainCursor,
+}
+
+/// Supported operations in the kitty multi-cursor protocol.
+///
+/// Returned in the capability query response (`CSI > SP q`). Each variant
+/// corresponds to a protocol operation code the terminal advertises support for.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum MultiCursorCapability {
+    /// Block cursor shape.
+    BlockShape = 1,
+    /// Beam cursor shape.
+    BeamShape = 2,
+    /// Underline cursor shape.
+    UnderlineShape = 3,
+    /// Follow the main cursor's shape.
+    FollowMainCursorShape = 29,
+    /// Change the color of text under extra cursors.
+    TextColor = 30,
+    /// Change the color of extra cursors.
+    CursorColor = 40,
+    /// Query currently set cursors.
+    QueryCurrentCursors = 100,
+    /// Query extra cursor colors.
+    QueryColors = 101,
+}
+
+impl TryFrom<u8> for MultiCursorCapability {
+    type Error = u8;
+
+    fn try_from(value: u8) -> std::result::Result<Self, Self::Error> {
+        match value {
+            1 => Ok(Self::BlockShape),
+            2 => Ok(Self::BeamShape),
+            3 => Ok(Self::UnderlineShape),
+            29 => Ok(Self::FollowMainCursorShape),
+            30 => Ok(Self::TextColor),
+            40 => Ok(Self::CursorColor),
+            100 => Ok(Self::QueryCurrentCursors),
+            101 => Ok(Self::QueryColors),
+            _ => Err(value),
+        }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Cursor {
     /// CBT Moves cursor to the Ps tabs backward. The default value of Ps is 1.
     BackwardTabulation(u32),
@@ -592,6 +643,20 @@ pub enum Cursor {
     },
 
     CursorStyle(CursorStyle),
+    QueryCursorShape,
+
+    /// Capability query response (kitty multi-cursor protocol).
+    ///
+    /// Contains the set of operations the terminal supports. An empty list
+    /// means the protocol is not supported.
+    CursorShapeQueryResponse(Vec<MultiCursorCapability>),
+
+    SetMultipleCursors {
+        shape: MultiCursorShape,
+        positions: Vec<(OneBased, OneBased)>,
+    },
+
+    ClearSecondaryCursors,
 }
 
 impl Cursor {
@@ -657,6 +722,32 @@ impl Display for Cursor {
                 }
             }
             Cursor::CursorStyle(style) => write!(f, "{} q", *style as u8),
+            Cursor::QueryCursorShape => write!(f, "> q"),
+            Cursor::CursorShapeQueryResponse(caps) => {
+                write!(f, ">")?;
+                for (i, cap) in caps.iter().enumerate() {
+                    if i > 0 {
+                        write!(f, ";")?;
+                    }
+                    write!(f, "{}", *cap as u8)?;
+                }
+                write!(f, " q")
+            }
+            Cursor::SetMultipleCursors { shape, positions } => {
+                write!(
+                    f,
+                    ">{}",
+                    match shape {
+                        MultiCursorShape::Style(style) => *style as u8,
+                        MultiCursorShape::FollowMainCursor => 29,
+                    }
+                )?;
+                for (line, col) in positions {
+                    write!(f, ";2:{}:{}", line, col)?;
+                }
+                write!(f, " q")
+            }
+            Cursor::ClearSecondaryCursors => write!(f, ">0;4 q"),
         }
     }
 }
@@ -1527,5 +1618,55 @@ mod test {
         // sequence up in the middle: that would make it nonsense.
         attributes.parameter_chunk_size = NonZeroU16::new(12).unwrap();
         assert_eq!(expected, Csi::Sgr(Sgr::Attributes(attributes)).to_string());
+    }
+
+    #[test]
+    fn multi_cursor_encoding() {
+        // QueryCursorShape
+        assert_eq!(
+            "\x1b[> q",
+            Csi::Cursor(Cursor::QueryCursorShape).to_string()
+        );
+
+        // CursorShapeQueryResponse with capability codes
+        assert_eq!(
+            "\x1b[>1;2;29;100 q",
+            Csi::Cursor(Cursor::CursorShapeQueryResponse(vec![
+                MultiCursorCapability::BlockShape,
+                MultiCursorCapability::BeamShape,
+                MultiCursorCapability::FollowMainCursorShape,
+                MultiCursorCapability::QueryCurrentCursors,
+            ]))
+            .to_string()
+        );
+
+        // SetMultipleCursors with MultiCursorShape::FollowMainCursor
+        assert_eq!(
+            "\x1b[>29;2:1:1;2:2:5 q",
+            Csi::Cursor(Cursor::SetMultipleCursors {
+                shape: MultiCursorShape::FollowMainCursor,
+                positions: vec![
+                    (OneBased::new(1).unwrap(), OneBased::new(1).unwrap()),
+                    (OneBased::new(2).unwrap(), OneBased::new(5).unwrap()),
+                ],
+            })
+            .to_string()
+        );
+
+        // SetMultipleCursors with MultiCursorShape::Style
+        assert_eq!(
+            "\x1b[>2;2:3:10 q",
+            Csi::Cursor(Cursor::SetMultipleCursors {
+                shape: MultiCursorShape::Style(CursorStyle::SteadyBlock),
+                positions: vec![(OneBased::new(3).unwrap(), OneBased::new(10).unwrap()),],
+            })
+            .to_string()
+        );
+
+        // ClearSecondaryCursors
+        assert_eq!(
+            "\x1b[>0;4 q",
+            Csi::Cursor(Cursor::ClearSecondaryCursors).to_string()
+        );
     }
 }

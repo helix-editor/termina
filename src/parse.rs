@@ -288,6 +288,10 @@ fn parse_csi(buffer: &[u8]) -> Result<Option<Event>> {
             b'y' => return parse_csi_synchronized_output_mode(buffer),
             _ => None,
         },
+        b'>' => match buffer[buffer.len() - 2..buffer.len()] {
+            [b' ', b'q'] => return parse_csi_cursor_shape_query_response(buffer),
+            _ => None,
+        },
         b'0'..=b'9' => {
             // Numbered escape code.
             if buffer.len() == 3 {
@@ -904,6 +908,39 @@ fn parse_csi_cursor_position(buffer: &[u8]) -> Result<Option<Event>> {
     ))))
 }
 
+fn parse_csi_cursor_shape_query_response(buffer: &[u8]) -> Result<Option<Event>> {
+    assert!(buffer.starts_with(b"\x1B[>")); // CSI >
+    assert!(buffer.ends_with(b" q"));
+
+    if buffer.len() < 5 {
+        // Minimum: ESC [ > SP q
+        return Ok(None);
+    }
+
+    let s = str::from_utf8(&buffer[3..buffer.len() - 2])?;
+
+    // An empty parameter string (CSI > SP q) is a query.
+    if s.is_empty() {
+        return Ok(Some(Event::Csi(Csi::Cursor(csi::Cursor::QueryCursorShape))));
+    }
+
+    let caps: Vec<csi::MultiCursorCapability> = s
+        .split(';')
+        .filter(|part| !part.is_empty())
+        .map(|part| {
+            part.parse::<u8>()
+                .map_err(|_| MalformedSequenceError)
+                .and_then(|v| {
+                    csi::MultiCursorCapability::try_from(v).map_err(|_| MalformedSequenceError)
+                })
+        })
+        .collect::<Result<Vec<_>>>()?;
+
+    Ok(Some(Event::Csi(Csi::Cursor(
+        csi::Cursor::CursorShapeQueryResponse(caps),
+    ))))
+}
+
 fn parse_csi_keyboard_enhancement_flags(buffer: &[u8]) -> Result<Option<Event>> {
     // CSI ? flags u
     assert!(buffer.starts_with(b"\x1B[?")); // ESC [ ?
@@ -1194,5 +1231,50 @@ mod test {
                 vec![style::RgbColor::new(40, 40, 40).into()]
             ))
         );
+    }
+
+    #[test]
+    fn parse_cursor_shape_query() {
+        // CSI > SP q with no parameters is a query.
+        let event = parse_event(b"\x1b[> q", false).unwrap().unwrap();
+        assert_eq!(
+            event,
+            Event::Csi(Csi::Cursor(csi::Cursor::QueryCursorShape))
+        );
+    }
+
+    #[test]
+    fn parse_cursor_shape_query_response() {
+        // Kitty responds with the supported operation codes.
+        let event = parse_event(b"\x1b[>1;2;29;100 q", false).unwrap().unwrap();
+        assert_eq!(
+            event,
+            Event::Csi(Csi::Cursor(csi::Cursor::CursorShapeQueryResponse(vec![
+                csi::MultiCursorCapability::BlockShape,
+                csi::MultiCursorCapability::BeamShape,
+                csi::MultiCursorCapability::FollowMainCursorShape,
+                csi::MultiCursorCapability::QueryCurrentCursors,
+            ])))
+        );
+    }
+
+    #[test]
+    fn parse_cursor_shape_query_response_invalid() {
+        // Value 7 is not a valid MultiCursorCapability code.
+        assert!(parse_event(b"\x1b[>7 q", false).is_err());
+    }
+
+    #[test]
+    fn cursor_shape_query_response_round_trip() {
+        let response = csi::Cursor::CursorShapeQueryResponse(vec![
+            csi::MultiCursorCapability::BlockShape,
+            csi::MultiCursorCapability::FollowMainCursorShape,
+            csi::MultiCursorCapability::QueryCurrentCursors,
+        ]);
+        let encoded = Csi::Cursor(response.clone()).to_string();
+        assert_eq!(encoded, "\x1b[>1;29;100 q");
+
+        let parsed = parse_event(encoded.as_bytes(), false).unwrap().unwrap();
+        assert_eq!(parsed, Event::Csi(Csi::Cursor(response)));
     }
 }
