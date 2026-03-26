@@ -12,6 +12,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Added
 
 * Add parsing of OSC dynamic color sequences from the terminal. ([980077903880](https://github.com/helix-editor/termina/commit/980077903880))
+* Add CSI sequences for the Kitty Multiple Cursor protocol. ([#14](https://github.com/helix-editor/termina/pull/14))
 
 ### Fixed
 
