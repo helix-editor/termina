@@ -1030,6 +1030,7 @@ fn parse_csi_mode(buffer: &[u8]) -> Result<Option<Event>> {
 
     let mode = match next_parsed::<u16>(&mut split)? {
         2026 => csi::DecPrivateMode::Code(csi::DecPrivateModeCode::SynchronizedOutput),
+        2027 => csi::DecPrivateMode::Code(csi::DecPrivateModeCode::GraphemeClustering),
         _ => bail!(),
     };
 
