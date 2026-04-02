@@ -285,7 +285,7 @@ fn parse_csi(buffer: &[u8]) -> Result<Option<Event>> {
             b'u' => return parse_csi_keyboard_enhancement_flags(buffer),
             b'c' => return parse_csi_primary_device_attributes(buffer),
             b'n' => return parse_csi_theme_mode(buffer),
-            b'y' => return parse_csi_synchronized_output_mode(buffer),
+            b'y' => return parse_csi_mode(buffer),
             _ => None,
         },
         b'>' => match buffer[buffer.len() - 2..buffer.len()] {
@@ -1014,8 +1014,9 @@ fn parse_csi_theme_mode(buffer: &[u8]) -> Result<Option<Event>> {
     )))))
 }
 
-fn parse_csi_synchronized_output_mode(buffer: &[u8]) -> Result<Option<Event>> {
-    // CSI ? 2026 ; 0 $ y
+fn parse_csi_mode(buffer: &[u8]) -> Result<Option<Event>> {
+    // sync output mode:       CSI ? 2026 ; 0 $ y
+    // grapheme clustering:    CSI ? 2027 ; 1 $ y
     assert!(buffer.starts_with(b"\x1B[?"));
     assert!(buffer.ends_with(b"y"));
 
@@ -1027,25 +1028,30 @@ fn parse_csi_synchronized_output_mode(buffer: &[u8]) -> Result<Option<Event>> {
 
     let mut split = s.split(';');
 
-    let mode = csi::DecPrivateModeCode::SynchronizedOutput;
-    if next_parsed::<u16>(&mut split)? != mode as u16 {
-        bail!();
-    }
+    let mode = match next_parsed::<u16>(&mut split)? {
+        2026 => csi::DecPrivateMode::Code(csi::DecPrivateModeCode::SynchronizedOutput),
+        2027 => csi::DecPrivateMode::Code(csi::DecPrivateModeCode::GraphemeClustering),
+        _ => bail!(),
+    };
 
-    // For synchronized output specifically, 3 is undefined and 0 and 4 are treated as "not
-    // supported."
     let setting = match next_parsed::<u8>(&mut split)? {
-        0 | 4 => csi::DecModeSetting::NotRecognized,
+        // For synchronized output specifically, 3 is undefined and 0 and 4 are treated as "not
+        // supported."
+        0 | 4 if mode == csi::DecPrivateMode::Code(csi::DecPrivateModeCode::SynchronizedOutput) => {
+            csi::DecModeSetting::NotRecognized
+        }
+        0 => csi::DecModeSetting::NotRecognized,
         1 => csi::DecModeSetting::Set,
         2 => csi::DecModeSetting::Reset,
+        3 if mode == csi::DecPrivateMode::Code(csi::DecPrivateModeCode::GraphemeClustering) => {
+            csi::DecModeSetting::PermanentlySet
+        }
+        4 => csi::DecModeSetting::PermanentlyReset,
         _ => bail!(),
     };
 
     Ok(Some(Event::Csi(Csi::Mode(
-        csi::Mode::ReportDecPrivateMode {
-            mode: csi::DecPrivateMode::Code(mode),
-            setting,
-        },
+        csi::Mode::ReportDecPrivateMode { mode, setting },
     ))))
 }
 
@@ -1276,5 +1282,29 @@ mod test {
 
         let parsed = parse_event(encoded.as_bytes(), false).unwrap().unwrap();
         assert_eq!(parsed, Event::Csi(Csi::Cursor(response)));
+    }
+
+    #[test]
+    fn parse_synchronized_output_mode_set() {
+        let event = parse_event(b"\x1b[?2026;1$y", false).unwrap().unwrap();
+        assert_eq!(
+            event,
+            Event::Csi(Csi::Mode(csi::Mode::ReportDecPrivateMode {
+                mode: csi::DecPrivateMode::Code(csi::DecPrivateModeCode::SynchronizedOutput),
+                setting: csi::DecModeSetting::Set,
+            }))
+        );
+    }
+
+    #[test]
+    fn parse_grapheme_clustering_mode_set() {
+        let event = parse_event(b"\x1b[?2027;1$y", false).unwrap().unwrap();
+        assert_eq!(
+            event,
+            Event::Csi(Csi::Mode(csi::Mode::ReportDecPrivateMode {
+                mode: csi::DecPrivateMode::Code(csi::DecPrivateModeCode::GraphemeClustering),
+                setting: csi::DecModeSetting::Set,
+            }))
+        );
     }
 }
