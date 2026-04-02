@@ -1277,4 +1277,16 @@ mod test {
         let parsed = parse_event(encoded.as_bytes(), false).unwrap().unwrap();
         assert_eq!(parsed, Event::Csi(Csi::Cursor(response)));
     }
+
+    #[test]
+    fn parse_synchronized_output_mode_set() {
+        let event = parse_event(b"\x1b[?2026;1$y", false).unwrap().unwrap();
+        assert_eq!(
+            event,
+            Event::Csi(Csi::Mode(csi::Mode::ReportDecPrivateMode {
+                mode: csi::DecPrivateMode::Code(csi::DecPrivateModeCode::SynchronizedOutput),
+                setting: csi::DecModeSetting::Set,
+            }))
+        );
+    }
 }
