@@ -1294,4 +1294,16 @@ mod test {
             }))
         );
     }
+
+    #[test]
+    fn parse_grapheme_clustering_mode_set() {
+        let event = parse_event(b"\x1b[?2027;1$y", false).unwrap().unwrap();
+        assert_eq!(
+            event,
+            Event::Csi(Csi::Mode(csi::Mode::ReportDecPrivateMode {
+                mode: csi::DecPrivateMode::Code(csi::DecPrivateModeCode::GraphemeClustering),
+                setting: csi::DecModeSetting::Set,
+            }))
+        );
+    }
 }
