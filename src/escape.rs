@@ -13,3 +13,5 @@ pub const OSC: &str = "\x1b]";
 pub const ST: &str = "\x1b\\";
 pub const SS3: &str = "\x1bO";
 pub const DCS: &str = "\x1bP";
+
+pub const BEL: &str = "\x07";
