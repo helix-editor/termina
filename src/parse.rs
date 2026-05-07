@@ -323,9 +323,12 @@ fn parse_csi(buffer: &[u8]) -> Result<Option<Event>> {
 
 fn parse_osc(buffer: &[u8]) -> Result<Option<Event>> {
     assert!(buffer.starts_with(b"\x1B]"));
+    // > In addition to the ECMA-48 string terminator (ST), xterm(1) accepts a BEL to
+    // > terminate an OSC string.
+    // https://www.man7.org/linux/man-pages/man4/console_codes.4.html
     let Some(buffer) = buffer
-        .strip_suffix(b"\x1B\\")
-        .or_else(|| buffer.strip_suffix(b"\x07"))
+        .strip_suffix(escape::ST.as_bytes())
+        .or_else(|| buffer.strip_suffix(escape::BEL.as_bytes()))
     else {
         return Ok(None);
     };
@@ -1233,6 +1236,16 @@ mod test {
     fn parse_osc_dynamic_color_response() {
         assert_eq!(
             parse_event(b"\x1b]11;rgb:2828/2828/2828\x1b\\", false)
+                .unwrap()
+                .unwrap(),
+            Event::Osc(osc::Osc::ChangeDynamicColors(
+                osc::DynamicColorNumber::TextBackgroundColor,
+                vec![style::RgbColor::new(40, 40, 40).into()]
+            ))
+        );
+        // BEL ending instead of ST
+        assert_eq!(
+            parse_event(b"\x1b]11;rgb:2828/2828/2828\x07", false)
                 .unwrap()
                 .unwrap(),
             Event::Osc(osc::Osc::ChangeDynamicColors(
