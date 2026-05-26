@@ -65,6 +65,9 @@ impl AsRawHandle for Handle {
 }
 
 impl Handle {
+    // NOTE: stdin/stdout satisfy the `'static` lifetime requirements of `BorrowedHandle`.
+    // > must remain open for the duration of the returned `BorrowedHandle`
+    // This is true since stdin/stdout have process-global lifetimes.
     pub fn stdin() -> Self {
         let stdin = io::stdin().as_raw_handle();
         Self::Borrowed(unsafe { BorrowedHandle::borrow_raw(stdin) })
