@@ -34,7 +34,8 @@ impl OneBased {
     }
 
     pub const fn from_zero_based(n: u16) -> Self {
-        OneBased(NonZeroU16::new(n).unwrap())
+        assert!(n < u16::MAX);
+        Self(unsafe { NonZeroU16::new_unchecked(n + 1) })
     }
 
     pub const fn get(self) -> u16 {
