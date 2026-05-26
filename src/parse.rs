@@ -885,13 +885,15 @@ fn parse_cb(cb: u8) -> Result<(MouseEventKind, Modifiers)> {
 
 fn parse_csi_bracketed_paste(buffer: &[u8]) -> Result<Option<Event>> {
     // CSI 2 0 0 ~ pasted text CSI 2 0 1 ~
-    assert!(buffer.starts_with(b"\x1B[200~"));
+    let buffer = buffer
+        .strip_prefix(b"\x1b[200~")
+        .expect("asserted by calling functions");
 
-    if !buffer.ends_with(b"\x1b[201~") {
-        Ok(None)
-    } else {
-        let paste = String::from_utf8_lossy(&buffer[6..buffer.len() - 6]).to_string();
+    if let Some(contents) = buffer.strip_suffix(b"\x1b[201~") {
+        let paste = String::from_utf8_lossy(contents).to_string();
         Ok(Some(Event::Paste(paste)))
+    } else {
+        Ok(None)
     }
 }
 
@@ -1322,5 +1324,16 @@ mod test {
                 setting: csi::DecModeSetting::Set,
             }))
         );
+    }
+
+    #[test]
+    fn parse_bracketed_paste() {
+        // Incomplete input is not considered a paste.
+        let event = parse_event(b"\x1b[200~", false).unwrap();
+        assert_eq!(event, None);
+        let event = parse_event(b"\x1b[200~Hello, world!\x1b[201~", false).unwrap();
+        assert_eq!(event, Some(Event::Paste("Hello, world!".to_string())));
+        let event = parse_event(b"\x1b[200~\x1b[201~", false).unwrap();
+        assert_eq!(event, Some(Event::Paste("".to_string())));
     }
 }
