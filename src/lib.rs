@@ -34,7 +34,7 @@ impl OneBased {
     }
 
     pub const fn from_zero_based(n: u16) -> Self {
-        Self(unsafe { NonZeroU16::new_unchecked(n + 1) })
+        OneBased(NonZeroU16::new(n).unwrap())
     }
 
     pub const fn get(self) -> u16 {
