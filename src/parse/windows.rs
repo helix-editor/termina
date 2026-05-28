@@ -22,7 +22,7 @@ pub use legacy::cursor_position;
 /// translates them directly into [`crate::Event`] values.
 ///
 /// [`crate::PlatformTerminal`] uses [`Self::Vte`] by default. The `windows-legacy` feature must be
-/// enabled to construct a terminal with [`crate::terminal::WindowsTerminal::with_mode`].
+/// enabled to construct a terminal with a custom input reader mode.
 #[derive(PartialEq, Eq, Clone, Copy, Debug)]
 pub enum InputReaderMode {
     /// Read input as virtual-terminal escape sequences.
