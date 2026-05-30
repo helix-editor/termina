@@ -15,16 +15,26 @@ use windows_sys::Win32::System::Console;
 #[cfg(feature = "windows-legacy")]
 pub use legacy::cursor_position;
 
-/// Mode to use for reading input events.
-/// See the [crate-level info](https://crates.io/crates/termina) for details on the differences between the modes.
+/// Mode to use for reading Windows input events.
 ///
-/// - [InputReaderMode::Vte] will enable reading input events using ANSI escape sequences.
-/// - [InputReaderMode::Legacy] will enable reading input events using legacy console events.
+/// VTE mode asks the Windows console to emit virtual-terminal input and then parses those bytes
+/// with [`crate::Parser`]. Legacy mode reads `INPUT_RECORD` values from the classic console API and
+/// translates them directly into [`crate::Event`] values.
 ///
-/// The `windows-legacy` feature must be enabled to use the legacy input reader.
+/// [`crate::PlatformTerminal`] uses [`Self::Vte`] by default. The `windows-legacy` feature must be
+/// enabled to construct a terminal with a custom input reader mode.
 #[derive(PartialEq, Eq, Clone, Copy, Debug)]
 pub enum InputReaderMode {
+    /// Read input as virtual-terminal escape sequences.
+    ///
+    /// This is the default mode. It matches Unix terminal input more closely and supports terminal
+    /// protocol responses that arrive as escape sequences.
     Vte,
+
+    /// Read input through the classic Windows console API.
+    ///
+    /// This mode is available only with the `windows-legacy` feature. It can be useful in console
+    /// environments where virtual-terminal input is unavailable or unreliable.
     Legacy,
 }
 
@@ -181,7 +191,8 @@ pub(crate) mod legacy {
     /// RightmostButtonPressed = 0x0002,
     /// /// This button state is not recognized.
     /// Unknown = 0x0021,
-    /// /// The wheel was rotated backward, toward the user; this will only be activated for `MOUSE_WHEELED ` from `dwEventFlags`
+    /// /// The wheel was rotated backward, toward the user.
+    /// /// This is active only for `MOUSE_WHEELED` from `dwEventFlags`.
     /// Negative = 0x0020,
     /// # }
     /// ```

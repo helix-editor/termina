@@ -1,9 +1,17 @@
-// CREDIT: This module was incrementally yanked from
-// <https://github.com/wezterm/wezterm/blob/a87358516004a652ad840bc1661bdf65ffc89b43/termwiz/src/escape/osc.rs>.
-// I've made stylistic changes like eliminating some traits (FromPrimitive, ToPrimitive) and only
-// copied parts - TermWiz has a more complete set of OSC escapes. I have added some new escapes
-// though, for example Contour's theme mode extension in `Mode::QueryTheme` and friends and the
-// `Sgr::Attributes` / `SgrAttributes` / `SgrModifiers` types.
+//! Strongly typed Control Sequence Introducer (CSI) escape sequences.
+//!
+//! Each enum in this module represents a family of CSI sequences and implements [`Display`] where
+//! Termina knows how to emit the sequence. This keeps terminal control code explicit while still
+//! allowing applications to write the formatted value directly to any [`std::io::Write`] target.
+//!
+//! # Implementation Notes
+//!
+//! This module is adapted from [termwiz's CSI support], but it was incrementally pulled across
+//! rather than copied wholesale. Termina keeps a curated subset, removes conversion traits, and
+//! adds focused extensions such as Contour theme reporting and the [`SgrAttributes`] /
+//! [`SgrModifiers`] grouping types. TermWiz has a more complete set of CSI escape sequences.
+//!
+//! [termwiz's CSI support]: https://docs.rs/termwiz/latest/termwiz/escape/enum.Csi.html
 
 use std::{
     fmt::{self, Display},
@@ -16,17 +24,56 @@ use crate::{
     OneBased,
 };
 
+/// A Control Sequence Introducer command.
+///
+/// Formatting writes the `ESC [` introducer followed by the command family payload. CSI commands
+/// are the main terminal protocol surface for cursor movement, text styling, mode changes, device
+/// reports, mouse reports, and window operations.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Csi {
-    /// "Select Graphics Rendition" (SGR).
-    /// These sequences affect how the cell is rendered by the terminal.
+    /// Select Graphic Rendition commands described by [`Sgr`].
+    ///
+    /// These `CSI ... m` commands change how subsequent cells are rendered.
     Sgr(Sgr),
+
+    /// Cursor commands described by [`Cursor`].
+    ///
+    /// This family covers cursor movement, cursor shape, margins, and position reports.
     Cursor(Cursor),
+
+    /// Text and display editing commands described by [`Edit`].
+    ///
+    /// This family covers insert, delete, erase, repeat, and scroll operations.
     Edit(Edit),
+
+    /// Terminal mode commands described by [`Mode`].
+    ///
+    /// This family covers setting, resetting, saving, restoring, querying, and reporting terminal
+    /// modes.
     Mode(Mode),
+
+    /// Mouse input reports described by [`MouseReport`].
+    ///
+    /// Modes such as [`DecPrivateModeCode::MouseTracking`],
+    /// [`DecPrivateModeCode::ButtonEventMouse`], and [`DecPrivateModeCode::AnyEventMouse`]
+    /// control when terminals send these reports.
     Mouse(MouseReport),
+
+    /// Kitty keyboard protocol commands described by [`Keyboard`].
+    ///
+    /// This family covers flag query, report, push, pop, and set commands.
     Keyboard(Keyboard),
+
+    /// Device and status commands described by [`Device`].
+    ///
+    /// This family covers device attributes, terminal status, terminal identity, and terminal
+    /// parameters.
     Device(Device),
+
+    /// Window commands described by [`Window`].
+    ///
+    /// This family covers window manipulation and reports, mostly from xterm-compatible
+    /// extensions.
     Window(Box<Window>),
 }
 
@@ -47,24 +94,63 @@ impl Display for Csi {
     }
 }
 
+/// A Select Graphic Rendition (`CSI ... m`) attribute update.
+///
+/// SGR changes rendering state for text written after the sequence: color, intensity, underline,
+/// blink, and related cell attributes. Terminals keep that state until another SGR command changes
+/// it or [`Self::Reset`] clears it. The VT510 reference documents the standard [SGR] parameter
+/// meanings that Termina models here.
+///
+/// [SGR]: https://vt100.net/docs/vt510-rm/SGR.html
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Sgr {
-    /// Resets the graphics rendition to default.
+    /// SGR 0: reset all graphic rendition attributes to terminal defaults.
     Reset,
+
+    /// Set text intensity described by [`Intensity`].
     Intensity(Intensity),
+
+    /// Set underline style described by [`Underline`].
+    ///
+    /// This includes Kitty's styled underline extension when terminals support it.
     Underline(Underline),
+
+    /// Set blink behavior described by [`Blink`].
     Blink(Blink),
+
+    /// Enable SGR 3 italic text or disable it with SGR 23.
     Italic(bool),
+
+    /// Enable SGR 7 reverse video or disable it with SGR 27.
     Reverse(bool),
+
+    /// Enable SGR 8 invisible text or disable it with SGR 28.
     Invisible(bool),
+
+    /// Enable SGR 9 strikethrough text or disable it with SGR 29.
     StrikeThrough(bool),
+
+    /// Enable SGR 53 overline text or disable it with SGR 55.
     Overline(bool),
+
+    /// Select the active font described by [`Font`].
     Font(Font),
+
+    /// Set vertical alignment described by [`VerticalAlign`].
     VerticalAlign(VerticalAlign),
+
+    /// Set the foreground color described by [`ColorSpec`].
     Foreground(ColorSpec),
+
+    /// Set the background color described by [`ColorSpec`].
     Background(ColorSpec),
+
+    /// Set the underline color described by [`ColorSpec`].
+    ///
+    /// This uses the SGR 58 underline-color extension.
     UnderlineColor(ColorSpec),
-    /// A helper type that can combine sequences into a single SGR update.
+
+    /// Combine multiple SGR updates described by [`SgrAttributes`].
     Attributes(SgrAttributes),
 }
 
@@ -319,16 +405,16 @@ impl Display for Sgr {
     }
 }
 
-/// A helper type which can contain multiple common SGR attributes.
+/// A grouped SGR update.
 ///
-/// This can be used to emit a single SGR escape sequence which updates multiple attributes, for
-/// example setting the foreground and background color at the same time. This is useful to reduce
-/// the total number of bytes needed to describe multiple SGR changes, giving the terminal less
-/// work to do in terms of parsing.
+/// [`Sgr`] accepts more than one parameter in a single `CSI ... m` sequence, so one escape can set
+/// the foreground color, background color, underline color, and text modifiers together. Grouping
+/// related changes reduces the number of bytes written and the number of CSI sequences the
+/// terminal has to parse.
 ///
-/// Note that if no attributes are set (`SgrAttributes::default`) the terminal will treat the
-/// escape the same as `Sgr::Reset`. So if you are using this type you may wish to compare the
-/// attributes you've built with `SgrAttributes::default()` to decide whether or not you want to
+/// Note that if no attributes are set ([`SgrAttributes::default`]) the terminal will treat the
+/// escape the same as [`Sgr::Reset`]. So if you are using this type you may wish to compare the
+/// attributes you've built with [`SgrAttributes::default`] to decide whether or not you want to
 /// write it to the terminal. Otherwise the escape codes for this type do not reset SGR. The
 /// example below sets a green foreground and bold intensity but would not affect any other SGR
 /// settings like underline or background color.
@@ -353,25 +439,26 @@ impl Display for Sgr {
 pub struct SgrAttributes {
     /// The foreground color used to paint text.
     pub foreground: Option<ColorSpec>,
+
     /// The background color used to paint the cell.
     pub background: Option<ColorSpec>,
+
     /// The color of the underline in the current cell.
     pub underline_color: Option<ColorSpec>,
-    /// Other modifiers like italic, bold, blinking, etc.
-    ///
-    /// See [SgrModifiers].
+
+    /// Bitflags for text modifiers such as intensity, underline, blink, italic, and reverse video.
     pub modifiers: SgrModifiers,
+
     /// The number of parameters which are allowed in a chunk.
     ///
     /// The VT parsers used in many terminal emulators set limits on the number of parameters a
     /// CSI sequence can use. After the limit they typically ignore all other parameters. For
-    /// many terminal emulators this is a relatively high number like 256 but some terminal
-    /// emulators set their limit as low as 10. For maximum compatibility this is set to 10 by
-    /// default.
+    /// many terminals this is a relatively high number like 256 but some set their limit as low as
+    /// 10. For maximum compatibility this is set to 10 by default.
     ///
-    /// The number of parameters taken to describe a modifier varies by modifier. True-color
-    /// colors (foreground, background, underline color) take the most while simple modifiers like
-    /// `SgrModifiers::ITALIC` take just one.
+    /// The number of parameters taken to describe a modifier varies by modifier. True-color colors
+    /// (foreground, background, underline color) take the most while simple modifiers like
+    /// [`SgrModifiers::ITALIC`] take just one.
     pub parameter_chunk_size: NonZeroU16,
 }
 
@@ -390,8 +477,8 @@ impl Default for SgrAttributes {
 impl SgrAttributes {
     /// Returns `true` if no attributes are set, `false` otherwise.
     ///
-    /// When empty attributes are displayed they produce the same escape sequence as `Sgr::Reset`.
-    /// If you are building attributes incrementally starting with `SgrAttributes::default()` then
+    /// When empty attributes are displayed they produce the same escape sequence as [`Sgr::Reset`].
+    /// If you are building attributes incrementally starting with [`SgrAttributes::default`] then
     /// you may wish to check whether the attributes are empty to decide whether or not you should
     /// write them to the terminal.
     ///
@@ -419,29 +506,76 @@ impl SgrAttributes {
 // We could represent `SgrAttributes` as a `Vec<Sgr>` but we can flatten the type out to have a
 // more compact representation with bitflags for each SGR instead:
 bitflags::bitflags! {
+    /// SGR modifier bits used by [`SgrAttributes`].
+    ///
+    /// These flags mirror SGR attributes that can be represented without carrying additional
+    /// color or font data.
     #[derive(Debug, Clone, Copy, PartialEq, Eq)]
     pub struct SgrModifiers: u32 {
+        /// No SGR modifiers.
         const NONE = 0;
+
+        /// SGR 0: reset all attributes.
         const RESET = 1 << 1;
+
+        /// SGR 22: normal intensity.
         const INTENSITY_NORMAL = 1 << 2;
+
+        /// SGR 2: dim intensity.
         const INTENSITY_DIM = 1 << 3;
+
+        /// SGR 1: bold intensity.
         const INTENSITY_BOLD = 1 << 4;
+
+        /// SGR 24: no underline.
         const UNDERLINE_NONE = 1 << 5;
+
+        /// SGR 4: single underline.
         const UNDERLINE_SINGLE = 1 << 6;
+
+        /// SGR 21: double underline.
         const UNDERLINE_DOUBLE = 1 << 7;
+
+        /// Kitty underline style 3: curly underline.
         const UNDERLINE_CURLY = 1 << 8;
+
+        /// Kitty underline style 4: dotted underline.
         const UNDERLINE_DOTTED = 1 << 9;
+
+        /// Kitty underline style 5: dashed underline.
         const UNDERLINE_DASHED = 1 << 10;
+
+        /// SGR 25: no blink.
         const BLINK_NONE = 1 << 11;
+
+        /// SGR 5: slow blink.
         const BLINK_SLOW = 1 << 12;
+
+        /// SGR 6: rapid blink.
         const BLINK_RAPID = 1 << 13;
+
+        /// SGR 3: italic.
         const ITALIC = 1 << 14;
+
+        /// SGR 23: no italic.
         const NO_ITALIC = 1 << 15;
+
+        /// SGR 7: reverse video.
         const REVERSE = 1 << 16;
+
+        /// SGR 27: no reverse video.
         const NO_REVERSE = 1 << 17;
+
+        /// SGR 8: invisible text.
         const INVISIBLE = 1 << 18;
+
+        /// SGR 28: visible text.
         const NO_INVISIBLE = 1 << 19;
+
+        /// SGR 9: strikethrough.
         const STRIKE_THROUGH = 1 << 20;
+
+        /// SGR 29: no strikethrough.
         const NO_STRIKE_THROUGH = 1 << 21;
         // Support font and vertical align? They're not well supported in terminals so I think
         // it's fine to leave them out of this type.
@@ -456,12 +590,16 @@ impl Default for SgrModifiers {
 
 // Cursor
 
-/// The cursor shape for the kitty multi-cursor protocol.
-/// This represents either a specific `CursorStyle` (protocol values 0-6)
+/// The cursor shape for the Kitty multi-cursor protocol.
+///
+/// This represents either a specific [`CursorStyle`] (protocol values 0-6)
 /// or the special "follow main cursor" value (protocol value 29).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum MultiCursorShape {
+    /// Use a specific cursor style for secondary cursors.
     Style(CursorStyle),
+
+    /// Use the main cursor's current shape for secondary cursors.
     FollowMainCursor,
 }
 
@@ -507,6 +645,24 @@ impl TryFrom<u8> for MultiCursorCapability {
     }
 }
 
+/// Cursor-related CSI commands.
+///
+/// This includes cursor movement, tabulation, position reports, margins, cursor style, and
+/// Kitty's multi-cursor extension.
+///
+/// ```
+/// use termina::{
+///     escape::csi::{Csi, Cursor},
+///     OneBased,
+/// };
+///
+/// let position = Cursor::Position {
+///     line: OneBased::new(3).unwrap(),
+///     col: OneBased::new(10).unwrap(),
+/// };
+/// assert_eq!(Csi::Cursor(position).to_string(), "\x1b[3;10H");
+/// assert_eq!(Csi::Cursor(Cursor::default_position()).to_string(), "\x1b[1;1H");
+/// ```
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Cursor {
     /// CBT Moves cursor to the Ps tabs backward. The default value of Ps is 1.
@@ -536,7 +692,9 @@ pub enum Cursor {
     /// HVP Moves cursor to the Ps1-th line and to the Ps2-th column. The
     /// default value of Ps1 and Ps2 is 1.
     CharacterAndLinePosition {
+        /// The destination line.
         line: OneBased,
+        /// The destination column.
         col: OneBased,
     },
 
@@ -582,7 +740,9 @@ pub enum Cursor {
     /// Pn1 and m equals the value of Pn2. CPR may be solicited by a DEVICE
     /// STATUS REPORT (DSR) or be sent unsolicited .
     ActivePositionReport {
+        /// The reported line.
         line: OneBased,
+        /// The reported column.
         col: OneBased,
     },
 
@@ -593,6 +753,8 @@ pub enum Cursor {
     /// SCP - Save Cursor Position.
     /// Only works when DECLRMM is disabled
     SaveCursor,
+
+    /// RCP - Restore Cursor Position.
     RestoreCursor,
 
     /// CTC - CURSOR TABULATION CONTROL
@@ -619,7 +781,9 @@ pub enum Cursor {
     /// Moves cursor to the Ps1-th line and to the Ps2-th column. The default
     /// value of Ps1 and Ps2 is 1.
     Position {
+        /// The destination line.
         line: OneBased,
+        /// The destination column.
         col: OneBased,
     },
 
@@ -632,17 +796,26 @@ pub enum Cursor {
 
     /// DECSTBM - Set top and bottom margins.
     SetTopAndBottomMargins {
+        /// The top margin line.
         top: OneBased,
+        /// The bottom margin line.
         bottom: OneBased,
     },
 
-    /// <https://vt100.net/docs/vt510-rm/DECSLRM.html>
+    /// [DECSLRM] - Set left and right margins.
+    ///
+    /// [DECSLRM]: https://vt100.net/docs/vt510-rm/DECSLRM.html
     SetLeftAndRightMargins {
+        /// The left margin column.
         left: OneBased,
+        /// The right margin column.
         right: OneBased,
     },
 
+    /// Set the cursor style.
     CursorStyle(CursorStyle),
+
+    /// Query the current cursor shape.
     QueryCursorShape,
 
     /// Capability query response (kitty multi-cursor protocol).
@@ -651,15 +824,21 @@ pub enum Cursor {
     /// means the protocol is not supported.
     CursorShapeQueryResponse(Vec<MultiCursorCapability>),
 
+    /// Set secondary cursor positions for the kitty multi-cursor protocol.
     SetMultipleCursors {
+        /// The shape used for the secondary cursors.
         shape: MultiCursorShape,
+
+        /// The one-based `(line, column)` positions of the secondary cursors.
         positions: Vec<(OneBased, OneBased)>,
     },
 
+    /// Clear all secondary cursors from the kitty multi-cursor protocol.
     ClearSecondaryCursors,
 }
 
 impl Cursor {
+    /// Returns the home cursor position, line 1 column 1.
     pub const fn default_position() -> Self {
         Self::Position {
             line: OneBased::from_zero_based(0),
@@ -752,15 +931,29 @@ impl Display for Cursor {
     }
 }
 
+/// Cursor tabulation control actions for CTC.
 #[derive(Debug, Default, Clone, Copy, PartialEq, Eq)]
 pub enum CursorTabulationControl {
+    /// Set a character tab stop at the active position.
     #[default]
     SetCharacterTabStopAtActivePosition = 0,
+
+    /// Set a line tab stop at the active line.
     SetLineTabStopAtActiveLine = 1,
+
+    /// Clear the character tab stop at the active position.
     ClearCharacterTabStopAtActivePosition = 2,
+
+    /// Clear the line tab stop at the active line.
     ClearLineTabstopAtActiveLine = 3,
+
+    /// Clear all character tab stops on the active line.
     ClearAllCharacterTabStopsAtActiveLine = 4,
+
+    /// Clear all character tab stops.
     ClearAllCharacterTabStops = 5,
+
+    /// Clear all line tab stops.
     ClearAllLineTabStops = 6,
 }
 
@@ -770,14 +963,26 @@ impl Display for CursorTabulationControl {
     }
 }
 
+/// Tab-stop clearing actions for TBC.
 #[derive(Debug, Default, Clone, Copy, PartialEq, Eq)]
 pub enum TabulationClear {
+    /// Clear the character tab stop at the active position.
     #[default]
     ClearCharacterTabStopAtActivePosition = 0,
+
+    /// Clear the line tab stop at the active line.
     ClearLineTabStopAtActiveLine = 1,
+
+    /// Clear all character tab stops on the active line.
     ClearCharacterTabStopsAtActiveLine = 2,
+
+    /// Clear all character tab stops.
     ClearAllCharacterTabStops = 3,
+
+    /// Clear all line tab stops.
     ClearAllLineTabStops = 4,
+
+    /// Clear all character and line tab stops.
     ClearAllTabStops = 5,
 }
 
@@ -789,6 +994,20 @@ impl Display for TabulationClear {
 
 // Edit
 
+/// Text and display editing CSI commands.
+///
+/// ```
+/// use termina::escape::csi::{Csi, Edit, EraseInDisplay, EraseInLine};
+///
+/// assert_eq!(
+///     Csi::Edit(Edit::EraseInLine(EraseInLine::EraseToEndOfLine)).to_string(),
+///     "\x1b[0K",
+/// );
+/// assert_eq!(
+///     Csi::Edit(Edit::EraseInDisplay(EraseInDisplay::EraseDisplay)).to_string(),
+///     "\x1b[2J",
+/// );
+/// ```
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Edit {
     /// DCH - DELETE CHARACTER
@@ -876,8 +1095,9 @@ pub enum Edit {
     /// appear to move down; where n equals the value of Pn. The active
     /// presentation position is not affected by this control function.
     ///
-    /// Also known as Pan Up in DEC:
-    /// <https://vt100.net/docs/vt510-rm/SD.html>
+    /// Also known as Pan Up in DEC; see [SD].
+    ///
+    /// [SD]: https://vt100.net/docs/vt510-rm/SD.html
     ScrollDown(u32),
 
     /// SU - SCROLL UP
@@ -920,14 +1140,21 @@ impl Display for Edit {
     }
 }
 
+/// Erase-in-line modes for EL.
 #[derive(Debug, Default, Clone, Copy, PartialEq, Eq)]
 pub enum EraseInLine {
+    /// Erase from the active position to the end of the line.
     #[default]
     EraseToEndOfLine = 0,
+
+    /// Erase from the start of the line through the active position.
     EraseToStartOfLine = 1,
+
+    /// Erase the entire active line.
     EraseLine = 2,
 }
 
+/// Erase-in-display modes for ED.
 #[derive(Debug, Default, Clone, Copy, PartialEq, Eq)]
 pub enum EraseInDisplay {
     /// the active presentation position and the character positions up to the
@@ -946,28 +1173,73 @@ pub enum EraseInDisplay {
 
 // Mode
 
+/// Terminal mode CSI commands.
+///
+/// This enum covers Digital Equipment Corporation (DEC) private modes
+/// (`CSI ? ... h/l/s/r/$p`), standard modes, xterm key modifier resources, and terminal theme
+/// query/report extensions.
+///
+/// ```
+/// use termina::escape::csi::{Csi, DecPrivateMode, DecPrivateModeCode, Mode};
+///
+/// let bracketed_paste = DecPrivateMode::Code(DecPrivateModeCode::BracketedPaste);
+/// assert_eq!(
+///     Csi::Mode(Mode::SetDecPrivateMode(bracketed_paste)).to_string(),
+///     "\x1b[?2004h",
+/// );
+/// assert_eq!(
+///     Csi::Mode(Mode::ResetDecPrivateMode(bracketed_paste)).to_string(),
+///     "\x1b[?2004l",
+/// );
+/// ```
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Mode {
+    /// Set a DEC private mode.
     SetDecPrivateMode(DecPrivateMode),
+
+    /// Reset a DEC private mode.
     ResetDecPrivateMode(DecPrivateMode),
+
+    /// Save a DEC private mode.
     SaveDecPrivateMode(DecPrivateMode),
+
+    /// Restore a DEC private mode.
     RestoreDecPrivateMode(DecPrivateMode),
-    // <https://vt100.net/docs/vt510-rm/DECRQM.html>
+
+    /// Query a DEC private mode setting.
     QueryDecPrivateMode(DecPrivateMode),
-    // <https://vt100.net/docs/vt510-rm/DECRPM.html>
+
+    /// Report a DEC private mode setting.
     ReportDecPrivateMode {
+        /// The DEC private mode being reported.
         mode: DecPrivateMode,
+
+        /// The current setting state for the mode.
         setting: DecModeSetting,
     },
+
+    /// Set a standard terminal mode.
     SetMode(TerminalMode),
+
+    /// Reset a standard terminal mode.
     ResetMode(TerminalMode),
+
+    /// Query a standard terminal mode.
     QueryMode(TerminalMode),
+
+    /// Set or query an xterm key modifier resource.
     XtermKeyMode {
+        /// The xterm key modifier resource.
         resource: XtermKeyModifierResource,
+
+        /// The resource value, or `None` to query it.
         value: Option<i64>,
     },
-    // <https://github.com/contour-terminal/contour/blob/master/docs/vt-extensions/color-palette-update-notifications.md>
+
+    /// Query the current terminal theme.
     QueryTheme,
+
+    /// Report the current terminal theme.
     ReportTheme(ThemeMode),
 }
 
@@ -1000,9 +1272,16 @@ impl Display for Mode {
     }
 }
 
+/// A Digital Equipment Corporation private mode value.
+///
+/// DEC private modes are terminal-specific mode numbers encoded with `CSI ? ...` sequences. Many
+/// modern terminal emulators still use this namespace for xterm-compatible extensions.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum DecPrivateMode {
+    /// A known DEC private mode code.
     Code(DecPrivateModeCode),
+
+    /// A DEC private mode code not modeled by [`DecPrivateModeCode`].
     Unspecified(u16),
 }
 
@@ -1016,104 +1295,261 @@ impl Display for DecPrivateMode {
     }
 }
 
+/// Known Digital Equipment Corporation private mode numbers.
+///
+/// The DEC private-mode namespace started with DEC terminals and now also carries common
+/// xterm-compatible extensions such as mouse tracking, alternate screens, and bracketed paste.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum DecPrivateModeCode {
-    /// <https://vt100.net/docs/vt510-rm/DECCKM.html>
+    /// Mode 1: [DECCKM] - Application Cursor Keys.
+    ///
     /// This mode is only effective when the terminal is in keypad application mode (see DECKPAM)
     /// and the ANSI/VT52 mode (DECANM) is set (see DECANM). Under these conditions, if the cursor
     /// key mode is reset, the four cursor function keys will send ANSI cursor control commands. If
     /// cursor key mode is set, the four cursor function keys will send application functions.
+    ///
+    /// [DECCKM]: https://vt100.net/docs/vt510-rm/DECCKM.html
     ApplicationCursorKeys = 1,
 
-    /// <https://vt100.net/docs/vt510-rm/DECANM.html>
-    /// Behave like a vt52
+    /// Mode 2: [DECANM] - behave like a VT52.
+    ///
+    /// This is a historical compatibility mode. Modern terminal applications usually leave the
+    /// terminal in ANSI mode and should not need to enable VT52 behavior.
+    ///
+    /// [DECANM]: https://vt100.net/docs/vt510-rm/DECANM.html
     DecAnsiMode = 2,
 
-    /// <https://vt100.net/docs/vt510-rm/DECCOLM.html>
+    /// Mode 3: [DECCOLM] - Select 132 columns.
+    ///
+    /// Setting this mode asks the terminal to switch from 80 columns to 132 columns. Many modern
+    /// terminals ignore or restrict this behavior.
+    ///
+    /// [DECCOLM]: https://vt100.net/docs/vt510-rm/DECCOLM.html
     Select132Columns = 3,
-    /// <https://vt100.net/docs/vt510-rm/DECSCLM.html>
+
+    /// Mode 4: [DECSCLM] - Smooth scroll.
+    ///
+    /// This mode controls whether scrolling should be smooth or jump-scroll style on DEC
+    /// terminals. Modern emulators commonly ignore it.
+    ///
+    /// [DECSCLM]: https://vt100.net/docs/vt510-rm/DECSCLM.html
     SmoothScroll = 4,
-    /// <https://vt100.net/docs/vt510-rm/DECSCNM.html>
+
+    /// Mode 5: [DECSCNM] - Reverse video.
+    ///
+    /// Setting this mode swaps the screen's foreground and background presentation.
+    ///
+    /// [DECSCNM]: https://vt100.net/docs/vt510-rm/DECSCNM.html
     ReverseVideo = 5,
-    /// <https://vt100.net/docs/vt510-rm/DECOM.html>
-    /// When OriginMode is enabled, cursor is constrained to the
-    /// scroll region and its position is relative to the scroll
-    /// region.
+
+    /// Mode 6: [DECOM] - Origin Mode.
+    ///
+    /// When enabled, OriginMode constrains cursor to the scroll region and makes its position
+    /// relative to that region.
+    ///
+    /// [DECOM]: https://vt100.net/docs/vt510-rm/DECOM.html
     OriginMode = 6,
-    /// <https://vt100.net/docs/vt510-rm/DECAWM.html>
-    /// When enabled, wrap to next line, Otherwise replace the last
-    /// character
+
+    /// Mode 7: [DECAWM] - Auto Wrap.
+    ///
+    /// When enabled, wrap to next line. Otherwise replace the last character.
+    ///
+    /// [DECAWM]: https://vt100.net/docs/vt510-rm/DECAWM.html
     AutoWrap = 7,
-    /// <https://vt100.net/docs/vt510-rm/DECARM.html>
+
+    /// Mode 8: [DECARM] - Auto Repeat.
+    ///
+    /// This controls whether held-down keys repeatedly generate input.
+    ///
+    /// [DECARM]: https://vt100.net/docs/vt510-rm/DECARM.html
     AutoRepeat = 8,
+
+    /// Mode 12: start blinking the cursor.
+    ///
+    /// This is an xterm cursor-control extension, not a DEC private mode from the VT manuals.
     StartBlinkingCursor = 12,
+
+    /// Mode 25: show the cursor.
+    ///
+    /// Applications commonly set this mode while running and reset it to hide the cursor during
+    /// full-screen drawing.
     ShowCursor = 25,
 
+    /// Mode 45: reverse-wrap from the left edge to the previous line.
+    ///
+    /// This xterm extension controls whether cursor-left from column 1 wraps to the previous line.
     ReverseWraparound = 45,
 
-    /// <https://vt100.net/docs/vt510-rm/DECLRMM.html>
+    /// Mode 69: [DECLRMM] - Left Right Margin Mode.
+    ///
+    /// [DECLRMM]: https://vt100.net/docs/vt510-rm/DECLRMM.html
     LeftRightMarginMode = 69,
 
-    /// DECSDM - <https://vt100.net/dec/ek-vt38t-ug-001.pdf#page=132>
+    /// Mode 80: DECSDM - Sixel Display Mode.
+    ///
+    /// See the sixel mode discussion in [EK-VT38T-UG-001].
+    ///
+    /// [EK-VT38T-UG-001]: https://vt100.net/dec/ek-vt38t-ug-001.pdf#page=132
     SixelDisplayMode = 80,
-    /// Enable mouse button press/release reporting
+
+    /// Mode 1000: enable mouse button press/release reporting.
+    ///
+    /// xterm mouse tracking defines the report encoding for this mode. Termina parses compatible
+    /// reports as [`crate::Event::Mouse`].
+    ///
+    /// [xterm mouse tracking]: https://invisible-island.net/xterm/ctlseqs/ctlseqs.html
     MouseTracking = 1000,
-    /// Warning: this requires a cooperative and timely response from
-    /// the application otherwise the terminal can hang
+
+    /// Mode 1001: enable highlight mouse tracking.
+    ///
+    /// Warning: this requires a cooperative and timely application response; otherwise the
+    /// terminal can hang. xterm mouse tracking defines the report encoding for this mode.
+    /// Termina parses compatible reports as [`crate::Event::Mouse`].
+    ///
+    /// [xterm mouse tracking]: https://invisible-island.net/xterm/ctlseqs/ctlseqs.html
     HighlightMouseTracking = 1001,
-    /// Enable mouse button press/release and drag reporting
+
+    /// Mode 1002: enable mouse button press/release and drag reporting.
+    ///
+    /// xterm mouse tracking defines the report encoding for this mode. Termina parses compatible
+    /// reports as [`crate::Event::Mouse`].
+    ///
+    /// [xterm mouse tracking]: https://invisible-island.net/xterm/ctlseqs/ctlseqs.html
     ButtonEventMouse = 1002,
-    /// Enable mouse motion, button press/release and drag reporting
+
+    /// Mode 1003: enable mouse motion, button press/release, and drag reporting.
+    ///
+    /// xterm mouse tracking defines the report encoding for this mode. Termina parses compatible
+    /// reports as [`crate::Event::Mouse`].
+    ///
+    /// [xterm mouse tracking]: https://invisible-island.net/xterm/ctlseqs/ctlseqs.html
     AnyEventMouse = 1003,
-    /// Enable FocusIn/FocusOut events
+
+    /// Mode 1004: enable FocusIn/FocusOut events.
+    ///
+    /// When enabled, compatible terminals send focus events as CSI `I` and CSI `O`. Termina parses
+    /// those reports as [`crate::Event::FocusIn`] and [`crate::Event::FocusOut`].
     FocusTracking = 1004,
+
+    /// Mode 1005: use the UTF-8 mouse coordinate encoding.
+    ///
+    /// This is an older extended-coordinate encoding. New applications generally prefer
+    /// [`Self::SGRMouse`] when supported.
     Utf8Mouse = 1005,
-    /// Use extended coordinate system in mouse reporting.  Does not
-    /// enable mouse reporting itself, it just controls how reports
-    /// will be encoded.
+
+    /// Mode 1006: use SGR extended coordinates in mouse reporting.
+    ///
+    /// This does not enable mouse reporting itself; it only controls how reports are encoded.
+    /// xterm extended coordinates define the `CSI < ... M/m` report shape parsed as
+    /// [`MouseReport::Sgr1006`].
+    ///
+    /// [xterm extended coordinates]: https://invisible-island.net/xterm/ctlseqs/ctlseqs.html
     SGRMouse = 1006,
+
+    /// Mode 1015: use RXVT mouse coordinate encoding.
+    ///
+    /// xterm extended coordinates document this as the older urxvt-style coordinate extension.
+    ///
+    /// [xterm extended coordinates]: https://invisible-island.net/xterm/ctlseqs/ctlseqs.html
     RXVTMouse = 1015,
-    /// Use pixels rather than text cells in mouse reporting.  Does
-    /// not enable mouse reporting itself, it just controls how
-    /// reports will be encoded.
+
+    /// Mode 1016: use pixels rather than text cells in mouse reporting.
+    ///
+    /// This does not enable mouse reporting itself; it only controls how reports are encoded.
+    /// xterm SGR pixels define the pixel-coordinate report shape parsed as
+    /// [`MouseReport::Sgr1016`].
+    ///
+    /// [xterm SGR pixels]: https://invisible-island.net/xterm/ctlseqs/ctlseqs.html#h3-SGR-Pixels
     SGRPixelsMouse = 1016,
 
+    /// Mode 1036: make xterm send Escape before Meta-modified keys.
+    ///
+    /// This changes keyboard encoding so Meta-modified input is delivered as an Escape-prefixed
+    /// sequence.
     XTermMetaSendsEscape = 1036,
+
+    /// Mode 1039: make xterm send Escape before Alt-modified keys.
+    ///
+    /// This changes keyboard encoding so Alt-modified input is delivered as an Escape-prefixed
+    /// sequence.
     XTermAltSendsEscape = 1039,
 
-    /// Save cursor as in DECSC
+    /// Mode 1048: save cursor as in DECSC.
+    ///
+    /// Full-screen applications often combine this with alternate-screen modes so they can restore
+    /// the user's cursor position on exit.
     SaveCursor = 1048,
+
+    /// Mode 1049: clear and switch to the alternate screen.
+    ///
+    /// This is the common xterm private mode for full-screen applications. It switches away from
+    /// the scrollback-backed main screen and clears the alternate screen.
     ClearAndEnableAlternateScreen = 1049,
+
+    /// Mode 47: switch to the alternate screen.
+    ///
+    /// This is an older alternate-screen mode. New applications usually use mode 1049.
     EnableAlternateScreen = 47,
+
+    /// Mode 1047: switch to the alternate screen using xterm's optional alternate-screen mode.
+    ///
+    /// Unlike mode 1049, this does not imply saving/restoring the cursor.
     OptEnableAlternateScreen = 1047,
+
+    /// Mode 2004: enable bracketed paste mode.
+    ///
+    /// When enabled, pasted text is wrapped in explicit start/end markers so applications can
+    /// distinguish paste from typed input. Termina parses the wrapped payload as
+    /// [`crate::Event::Paste`]. xterm documents this mode as [bracketed paste mode].
+    ///
+    /// [bracketed paste mode]: https://invisible-island.net/xterm/ctlseqs/ctlseqs.html#h2-Bracketed-Paste-Mode
     BracketedPaste = 2004,
 
-    /// <https://github.com/contour-terminal/terminal-unicode-core/>
-    /// Grapheme clustering mode
+    /// Mode 2027: grapheme clustering mode from [Contour Unicode core].
+    ///
+    /// [Contour Unicode core]: https://github.com/contour-terminal/terminal-unicode-core/
     GraphemeClustering = 2027,
 
-    /// <https://github.com/contour-terminal/contour/blob/master/docs/vt-extensions/color-palette-update-notifications.md>
+    /// Mode 2031: theme notification mode from [Contour color-palette notifications].
+    ///
+    /// [Contour color-palette notifications]: https://github.com/contour-terminal/contour/
     Theme = 2031,
 
-    /// Applies to sixel and regis modes
+    /// Mode 1070: use private color registers for each sixel or ReGIS graphic.
+    ///
+    /// This keeps image color registers local to a graphic instead of sharing them globally across
+    /// the terminal session.
     UsePrivateColorRegistersForEachGraphic = 1070,
 
-    /// <https://gist.github.com/christianparpart/d8a62cc1ab659194337d73e399004036>
+    /// Mode 2026: [Synchronized output proposal] mode.
+    ///
+    /// [Synchronized output proposal]: https://gist.github.com/christianparpart/
     SynchronizedOutput = 2026,
 
+    /// Mode 7727: enable MinTTY application Escape key mode.
+    ///
+    /// This MinTTY extension changes how the Escape key is encoded in application contexts.
     MinTTYApplicationEscapeKeyMode = 7727,
 
-    /// xterm: adjust cursor positioning after emitting sixel
+    /// Mode 8452: adjust cursor positioning after emitting sixel.
+    ///
+    /// This xterm mode controls whether sixel output advances the cursor as if the graphic
+    /// occupied cells.
     SixelScrollsRight = 8452,
 
-    /// Windows Terminal: win32-input-mode
-    /// <https://github.com/microsoft/terminal/blob/main/doc/specs/%234999%20-%20Improved%20keyboard%20handling%20in%20Conpty.md>
+    /// Mode 9001: Windows Terminal win32-input-mode from [Microsoft terminal keyboard handling].
+    ///
+    /// [Microsoft terminal keyboard handling]: https://github.com/microsoft/terminal/
     Win32InputMode = 9001,
 }
 
+/// A standard terminal mode value.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum TerminalMode {
+    /// A known standard terminal mode code.
     Code(TerminalModeCode),
+
+    /// A standard terminal mode code not modeled by [`TerminalModeCode`].
     Unspecified(u16),
 }
 
@@ -1127,60 +1563,146 @@ impl Display for TerminalMode {
     }
 }
 
+/// Known standard terminal mode numbers.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum TerminalModeCode {
-    /// <https://vt100.net/docs/vt510-rm/KAM.html>
+    /// Mode 2: [KAM] - Keyboard Action Mode.
+    ///
+    /// When set, keyboard input is disabled. Applications usually avoid this mode unless they are
+    /// intentionally locking local keyboard entry.
+    ///
+    /// [KAM]: https://vt100.net/docs/vt510-rm/KAM.html
     KeyboardAction = 2,
-    /// <https://vt100.net/docs/vt510-rm/IRM.html>
+
+    /// Mode 4: [IRM] - Insert Replace Mode.
+    ///
+    /// When set, printable characters insert at the cursor and shift existing content right.
+    /// When reset, printable characters replace existing cells.
+    ///
+    /// [IRM]: https://vt100.net/docs/vt510-rm/IRM.html
     Insert = 4,
-    /// <<https://terminal-wg.pages.freedesktop.org/bidi/recommendation/escape-sequences.html>>
+
+    /// Mode 8: bidirectional support mode.
+    ///
+    /// The terminal-wg bidi recommendation uses this mode to enable bidirectional text support in
+    /// terminals that implement the proposal.
+    ///
+    /// [Terminal WG bidi recommendation]: https://terminal-wg.pages.freedesktop.org/bidi/
     BiDirectionalSupportMode = 8,
-    /// <https://vt100.net/docs/vt510-rm/SRM.html>
-    /// But in the MS terminal this is cursor blinking.
+
+    /// Mode 12: [SRM] - Send Receive Mode.
+    ///
+    /// ECMA-48 defines this as local echo control. Microsoft terminal implementations also use
+    /// mode 12 for cursor blinking, so callers should be aware of that compatibility difference.
+    ///
+    /// [SRM]: https://vt100.net/docs/vt510-rm/SRM.html
     SendReceive = 12,
-    /// <https://vt100.net/docs/vt510-rm/LNM.html>
+
+    /// Mode 20: [LNM] - Line Feed/New Line Mode.
+    ///
+    /// When set, line feed also performs carriage return. When reset, line feed only moves to the
+    /// next line.
+    ///
+    /// [LNM]: https://vt100.net/docs/vt510-rm/LNM.html
     AutomaticNewline = 20,
-    /// MS terminal cursor visibility
+
+    /// Mode 25: Microsoft terminal cursor visibility.
+    ///
+    /// This mirrors the DEC private cursor-visibility mode in some Microsoft terminal contexts.
     ShowCursor = 25,
 }
 
+/// xterm key modifier resources addressed by `CSI > ... m`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum XtermKeyModifierResource {
+    /// Resource 0: xterm keyboard modifier keys.
+    ///
+    /// This resource controls xterm's general modified-key behavior.
     Keyboard = 0,
+
+    /// Resource 1: xterm cursor-key modifier keys.
+    ///
+    /// This resource controls modified arrow-key and navigation-key encodings.
     CursorKeys = 1,
+
+    /// Resource 2: xterm function-key modifier keys.
+    ///
+    /// This resource controls modified function-key encodings.
     FunctionKeys = 2,
+
+    /// Resource 4: xterm other-key modifier keys.
+    ///
+    /// This resource controls modified-key encodings for keys outside the cursor/function groups.
     OtherKeys = 4,
 }
 
+/// Reported state for a DEC private mode query.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum DecModeSetting {
+    /// Report value 0: the terminal does not recognize the requested mode.
     NotRecognized = 0,
+
+    /// Report value 1: the mode is set.
     Set = 1,
+
+    /// Report value 2: the mode is reset.
     Reset = 2,
+
+    /// Report value 3: the mode is permanently set and cannot be changed.
     PermanentlySet = 3,
+
+    /// Report value 4: the mode is permanently reset and cannot be changed.
     PermanentlyReset = 4,
 }
 
+/// Terminal theme values reported by the Contour theme extension.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ThemeMode {
+    /// Report value 1: the terminal is using a dark theme.
     Dark = 1,
+
+    /// Report value 2: the terminal is using a light theme.
     Light = 2,
 }
 
 // Mouse
 
+/// Mouse reports emitted by terminal mouse tracking modes.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum MouseReport {
+    /// An SGR 1006 mouse report using text-cell coordinates.
+    ///
+    /// This is the report format enabled by [`DecPrivateModeCode::SGRMouse`]. Coordinates are
+    /// one-based terminal cell positions.
     Sgr1006 {
+        /// The one-based cell column.
         x: u16,
+
+        /// The one-based cell row.
         y: u16,
+
+        /// The reported mouse button action.
         button: MouseButton,
+
+        /// The modifiers active during the mouse event.
         modifiers: Modifiers,
     },
+
+    /// An SGR 1016 mouse report using pixel coordinates.
+    ///
+    /// This is the report format enabled by [`DecPrivateModeCode::SGRPixelsMouse`]. Coordinates
+    /// are pixel positions instead of terminal cell positions.
     Sgr1016 {
+        /// The x coordinate in pixels.
         x_pixels: u16,
+
+        /// The y coordinate in pixels.
         y_pixels: u16,
+
+        /// The reported mouse button action.
         button: MouseButton,
+
+        /// The modifiers active during the mouse event.
         modifiers: Modifiers,
     },
 }
@@ -1280,25 +1802,61 @@ impl Display for MouseReport {
     }
 }
 
+/// Mouse button actions encoded in SGR mouse reports.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum MouseButton {
+    /// Button 1 was pressed; encoded with button value 0 and trailer `M`.
     Button1Press,
+
+    /// Button 2 was pressed; encoded with button value 1 and trailer `M`.
     Button2Press,
+
+    /// Button 3 was pressed; encoded with button value 2 and trailer `M`.
     Button3Press,
+
+    /// Button 4 was pressed; encoded with button value 64 and trailer `M`.
     Button4Press,
+
+    /// Button 5 was pressed; encoded with button value 65 and trailer `M`.
     Button5Press,
+
+    /// Button 6 was pressed; encoded with button value 66.
     Button6Press,
+
+    /// Button 7 was pressed; encoded with button value 67.
     Button7Press,
+
+    /// Button 1 was released; encoded with button value 0 and trailer `m`.
     Button1Release,
+
+    /// Button 2 was released; encoded with button value 1 and trailer `m`.
     Button2Release,
+
+    /// Button 3 was released; encoded with button value 2 and trailer `m`.
     Button3Release,
+
+    /// Button 4 was released; encoded with button value 64 and trailer `m`.
     Button4Release,
+
+    /// Button 5 was released; encoded with button value 65 and trailer `m`.
     Button5Release,
+
+    /// Button 6 was released; encoded with button value 66.
     Button6Release,
+
+    /// Button 7 was released; encoded with button value 67.
     Button7Release,
+
+    /// Button 1 was dragged; encoded with button value 32 and trailer `M`.
     Button1Drag,
+
+    /// Button 2 was dragged; encoded with button value 33 and trailer `M`.
     Button2Drag,
+
+    /// Button 3 was dragged; encoded with button value 34 and trailer `M`.
     Button3Drag,
+
+    /// No mouse button was involved; encoded with button value 35 and trailer `M`.
     None,
 }
 
@@ -1307,13 +1865,25 @@ pub enum MouseButton {
 // <https://sw.kovidgoyal.net/kitty/keyboard-protocol/>.
 
 bitflags::bitflags! {
+    /// Feature flags for the Kitty keyboard protocol.
     #[derive(Debug, Clone, Copy, PartialEq, Eq)]
     pub struct KittyKeyboardFlags: u8 {
+        /// No keyboard enhancement flags.
         const NONE = 0;
+
+        /// Disambiguate escape codes for keys that otherwise share encodings.
         const DISAMBIGUATE_ESCAPE_CODES = 1;
+
+        /// Report press, release, and repeat event types.
         const REPORT_EVENT_TYPES = 2;
+
+        /// Report alternate key values.
         const REPORT_ALTERNATE_KEYS = 4;
+
+        /// Report all keys as escape codes.
         const REPORT_ALL_KEYS_AS_ESCAPE_CODES = 8;
+
+        /// Report associated text for key events.
         const REPORT_ASSOCIATED_TEXT = 16;
     }
 }
@@ -1324,31 +1894,49 @@ impl Display for KittyKeyboardFlags {
     }
 }
 
-/// CSI sequences for interacting with the [Kitty Keyboard
-/// Protocol](https://sw.kovidgoyal.net/kitty/keyboard-protocol/).
+/// CSI sequences for interacting with the [Kitty Keyboard Protocol].
+///
+/// [Kitty Keyboard Protocol]: https://sw.kovidgoyal.net/kitty/keyboard-protocol/
 ///
 /// Note that the Kitty Keyboard Protocol requires terminals to maintain different stacks for the
 /// main and alternate screens. This means that applications which use alternate screens do not
-/// necessarily need to pop flags (via `Self::PopFlags`) when exiting. By entering the main screen
+/// necessarily need to pop flags (via [`Self::PopFlags`]) when exiting. By entering the main screen
 /// the flags must be automatically reset by the terminal. Any flags which were pushed, however,
 /// will remain active in the alternate screen, even if the alternate screen is entered by a
-/// different application. So generally you should use `Self::PopFlags` when shutting down your
-/// application.
+/// different application. Pop flags during shutdown when the application pushed flags itself.
+///
+/// ```
+/// use termina::escape::csi::{
+///     Csi, Keyboard, KittyKeyboardFlags, SetKeyboardFlagsMode,
+/// };
+///
+/// let command = Keyboard::SetFlags {
+///     flags: KittyKeyboardFlags::REPORT_EVENT_TYPES,
+///     mode: SetKeyboardFlagsMode::SetSpecified,
+/// };
+/// assert_eq!(Csi::Keyboard(command).to_string(), "\x1b[=2;2u");
+/// ```
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Keyboard {
     /// Query the current values of the flags.
     QueryFlags,
+
     /// A report from the terminal declaring which flags are currently set.
     ReportFlags(KittyKeyboardFlags),
+
     /// Pushes the given flags onto the terminal's stack.
     PushFlags(KittyKeyboardFlags),
+
     /// Pops the given number of stack entries from the terminal's stack.
     PopFlags(u8),
+
     /// Requests keyboard enhancement with the given flags according to the mode.
     ///
     /// Also see [SetKeyboardFlagsMode].
     SetFlags {
+        /// The flags to assign, set, or clear.
         flags: KittyKeyboardFlags,
+        /// How the terminal should apply `flags`.
         mode: SetKeyboardFlagsMode,
     },
 }
@@ -1371,8 +1959,10 @@ impl Display for Keyboard {
 pub enum SetKeyboardFlagsMode {
     /// Request any of the given flags and reset any flags which are not given.
     AssignAll = 1,
+
     /// Request the given flags and ignore any flags which are not given.
     SetSpecified = 2,
+
     /// Clear the given flags and ignore any flags which are not given.
     ClearSpecified = 3,
 }
@@ -1383,18 +1973,48 @@ impl Display for SetKeyboardFlagsMode {
     }
 }
 
+/// Device and status CSI commands.
+///
+/// ```
+/// use termina::escape::csi::{Csi, Device};
+///
+/// assert_eq!(Csi::Device(Device::StatusReport).to_string(), "\x1b[5n");
+/// assert_eq!(
+///     Csi::Device(Device::RequestPrimaryDeviceAttributes).to_string(),
+///     "\x1b[c",
+/// );
+/// ```
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Device {
+    /// A device-attributes response.
     DeviceAttributes(()),
-    /// DECSTR - <https://vt100.net/docs/vt510-rm/DECSTR.html>
+
+    /// [DECSTR] - soft terminal reset.
+    ///
+    /// [DECSTR]: https://vt100.net/docs/vt510-rm/DECSTR.html
     SoftReset,
+
+    /// Request primary device attributes.
     RequestPrimaryDeviceAttributes,
+
+    /// Request secondary device attributes.
     RequestSecondaryDeviceAttributes,
+
+    /// Request tertiary device attributes.
     RequestTertiaryDeviceAttributes,
+
+    /// Request terminal status.
     StatusReport,
-    /// <https://github.com/mintty/mintty/issues/881>
-    /// <https://gitlab.gnome.org/GNOME/vte/-/issues/235>
+
+    /// Request the terminal name and version.
+    ///
+    /// Mintty and GNOME VTE discuss this query in [Mintty issue #881] and [GNOME VTE issue #235].
+    ///
+    /// [Mintty issue #881]: https://github.com/mintty/mintty/issues/881
+    /// [GNOME VTE issue #235]: https://gitlab.gnome.org/GNOME/vte/-/issues/235
     RequestTerminalNameAndVersion,
+
+    /// Request terminal parameters.
     RequestTerminalParameters(i64),
 }
 
@@ -1415,60 +2035,167 @@ impl Display for Device {
 
 // Window
 
+/// Window manipulation and window report CSI commands.
+///
+/// ```
+/// use termina::escape::csi::{Csi, Window};
+///
+/// assert_eq!(
+///     Csi::Window(Box::new(Window::ReportWindowTitle)).to_string(),
+///     "\x1b[21t",
+/// );
+/// assert_eq!(
+///     Csi::Window(Box::new(Window::ResizeWindowCells {
+///         width: Some(120),
+///         height: Some(40),
+///     }))
+///     .to_string(),
+///     "\x1b[8;40;120t",
+/// );
+/// ```
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Window {
+    /// De-iconify the window.
     DeIconify,
+
+    /// Iconify the window.
     Iconify,
+
+    /// Move the window to a pixel position.
     MoveWindow {
+        /// The x coordinate in pixels.
         x: i64,
+
+        /// The y coordinate in pixels.
         y: i64,
     },
+
+    /// Resize the window to a pixel size.
     ResizeWindowPixels {
+        /// The desired width in pixels.
         width: Option<i64>,
+
+        /// The desired height in pixels.
         height: Option<i64>,
     },
+
+    /// Raise the window.
     RaiseWindow,
+
+    /// Lower the window.
     LowerWindow,
+
+    /// Refresh the window.
     RefreshWindow,
+
+    /// Resize the window to a cell size.
     ResizeWindowCells {
+        /// The desired width in cells.
         width: Option<i64>,
+
+        /// The desired height in cells.
         height: Option<i64>,
     },
+
+    /// Restore a maximized window.
     RestoreMaximizedWindow,
+
+    /// Maximize the window.
     MaximizeWindow,
+
+    /// Maximize the window vertically.
     MaximizeWindowVertically,
+
+    /// Maximize the window horizontally.
     MaximizeWindowHorizontally,
+
+    /// Leave fullscreen mode.
     UndoFullScreenMode,
+
+    /// Enter fullscreen mode.
     ChangeToFullScreenMode,
+
+    /// Toggle fullscreen mode.
     ToggleFullScreen,
+
+    /// Request the window state.
     ReportWindowState,
+
+    /// Request the window position.
     ReportWindowPosition,
+
+    /// Request the text-area position.
     ReportTextAreaPosition,
+
+    /// Request the text-area size in pixels.
     ReportTextAreaSizePixels,
+
+    /// Request the window size in pixels.
     ReportWindowSizePixels,
+
+    /// Request the screen size in pixels.
     ReportScreenSizePixels,
+
+    /// Request the cell size in pixels.
     ReportCellSizePixels,
+
+    /// Report the cell size in pixels.
     ReportCellSizePixelsResponse {
+        /// The reported cell width in pixels.
         width: Option<i64>,
+
+        /// The reported cell height in pixels.
         height: Option<i64>,
     },
+
+    /// Request the text-area size in cells.
     ReportTextAreaSizeCells,
+
+    /// Request the screen size in cells.
     ReportScreenSizeCells,
+
+    /// Request the icon label.
     ReportIconLabel,
+
+    /// Request the window title.
     ReportWindowTitle,
+
+    /// Push the icon and window title onto the title stack.
     PushIconAndWindowTitle,
+
+    /// Push the icon title onto the title stack.
     PushIconTitle,
+
+    /// Push the window title onto the title stack.
     PushWindowTitle,
+
+    /// Pop the icon and window title from the title stack.
     PopIconAndWindowTitle,
+
+    /// Pop the icon title from the title stack.
     PopIconTitle,
+
+    /// Pop the window title from the title stack.
     PopWindowTitle,
+
     /// DECRQCRA; used by esctest
     ChecksumRectangularArea {
+        /// The checksum request identifier.
         request_id: i64,
+
+        /// The page number to checksum.
         page_number: i64,
+
+        /// The top row of the rectangular area.
         top: OneBased,
+
+        /// The left column of the rectangular area.
         left: OneBased,
+
+        /// The bottom row of the rectangular area.
         bottom: OneBased,
+
+        /// The right column of the rectangular area.
         right: OneBased,
     },
 }

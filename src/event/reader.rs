@@ -1,8 +1,19 @@
-// CREDIT: <https://github.com/crossterm-rs/crossterm/blob/36d95b26a26e64b0f8c12edfe11f410a6d56a812/src/event/read.rs>
-// This module provides an `Arc<Mutex<T>>` wrapper around a type which is basically the crossterm
-// `InternalEventReader`. This allows it to live on the Terminal and an EventStream rather than
-// statically.
-// Instead of crossterm's `Filter` trait I have opted for a `Fn(&Event) -> bool` for simplicity.
+//! Thread-safe terminal event reader.
+//!
+//! This module provides an `Arc<Mutex<T>>` wrapper around the platform event source. That lets a
+//! reader live on a terminal handle and also be shared with the optional async stream, rather than
+//! being stored globally.
+//!
+//! # Implementation Notes
+//!
+//! This is adapted from [crossterm's event reader]. The shared reader is mostly an
+//! `Arc<Mutex<T>>` wrapper around the same shape as crossterm's internal event reader. This lets
+//! it live on a [`Terminal`] and on an `EventStream` instead of being stored globally. Termina uses
+//! `Fn(&Event) -> bool` filters instead of a dedicated filter trait so callers can pass ordinary
+//! closures.
+//!
+//! [crossterm's event reader]: https://docs.rs/crossterm/latest/crossterm/event/index.html
+//! [`Terminal`]: crate::Terminal
 
 use std::{collections::VecDeque, io, sync::Arc, time::Duration};
 
@@ -17,6 +28,63 @@ use super::{
 ///
 /// Note that this type wraps an `Arc` and is cheap to clone. If the `event-stream` feature is
 /// enabled then this value should be passed to `EventStream::new`.
+///
+/// [`Self::read`] and [`Self::poll`] both take filters. Events rejected by a filter remain buffered
+/// so a caller can wait for a key press without discarding protocol responses, mouse events, or
+/// other input that another part of the application may read later. Filtering preserves rejected
+/// events for later reads, but callers should not rely on rejected events being re-buffered in exact
+/// stream order across multiple filtered reads.
+///
+/// # Examples
+///
+/// Read every event and branch on the event kind:
+///
+/// ```no_run
+/// use std::io;
+///
+/// use termina::{
+///     event::{Event, KeyCode, KeyEventKind},
+///     PlatformTerminal, Terminal,
+/// };
+///
+/// fn main() -> io::Result<()> {
+///     let reader = PlatformTerminal::new()?.event_reader();
+///     loop {
+///         let event = reader.read(|_| true)?;
+///         match event {
+///             Event::Key(key)
+///                 if key.kind == KeyEventKind::Press && key.code == KeyCode::Char('q') =>
+///             {
+///                 break
+///             }
+///             Event::Mouse(mouse) => eprintln!("mouse at {},{}", mouse.column, mouse.row),
+///             Event::Csi(csi) => eprintln!("CSI response: {csi:?}"),
+///             _ => {}
+///         }
+///     }
+///     Ok(())
+/// }
+/// ```
+///
+/// Use a filter when a call should wait for a specific class of event:
+///
+/// ```no_run
+/// use std::io;
+///
+/// use termina::{
+///     event::{Event, KeyEventKind},
+///     PlatformTerminal, Terminal,
+/// };
+///
+/// fn main() -> io::Result<()> {
+///     let reader = PlatformTerminal::new()?.event_reader();
+///     let event = reader.read(|event| {
+///         matches!(event, Event::Key(key) if key.kind == KeyEventKind::Press)
+///     })?;
+///     println!("received {event:?}");
+///     Ok(())
+/// }
+/// ```
 #[derive(Debug, Clone)]
 pub struct EventReader {
     shared: Arc<Mutex<Shared>>,
@@ -34,11 +102,17 @@ impl EventReader {
         }
     }
 
+    /// Returns a platform-specific waker that can unblock [`poll`](Self::poll) calls.
     pub fn waker(&self) -> PlatformWaker {
         let reader = self.shared.lock();
         reader.source.waker()
     }
 
+    /// Polls for availability of an event matching `filter`.
+    ///
+    /// When `timeout` is `None`, this call blocks indefinitely. Events rejected by `filter` are
+    /// retained so a later call can still return them. Use the same filter with [`Self::read`] if
+    /// the follow-up read should consume the event that made this method return `true`.
     pub fn poll<F>(&self, timeout: Option<Duration>, filter: F) -> io::Result<bool>
     where
         F: FnMut(&Event) -> bool,
@@ -56,6 +130,11 @@ impl EventReader {
         reader.poll(timeout, filter)
     }
 
+    /// Blocks until an event matching `filter` is available.
+    ///
+    /// Events rejected by `filter` are retained for later reads. For keyboard shortcuts, filter on
+    /// `Event::Key(key) if key.kind == KeyEventKind::Press` unless the application intentionally
+    /// handles release or repeat events.
     pub fn read<F>(&self, filter: F) -> io::Result<Event>
     where
         F: FnMut(&Event) -> bool,

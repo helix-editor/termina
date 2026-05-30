@@ -18,18 +18,22 @@ This means there is no single answer for which protocol to use - it depends on y
 
 See feature comparison below.
 
-|                                                              | VTE Mode                                                  | Legacy Console Mode |
-| ------------------------------------------------------------ | --------------------------------------------------------- | ------------------- |
-| **Kitty Keyboard Protocol**                                  | ✓                                                         | ✕                   |
-| **Extended key events**                                      | terminal-dependent (must support Kitty Keyboard Protocol) | ✓                   |
-| **Bracketed paste**                                          | ✓                                                         | ✕                   |
-| **[AltGr](https://en.wikipedia.org/wiki/AltGr_key) Support** | ✓                                                         | ✕                   |
+|                             | VTE Mode            | Legacy Console Mode |
+| --------------------------- | ------------------- | ------------------- |
+| **Kitty Keyboard Protocol** | ✓                   | ✕                   |
+| **Extended key events**     | terminal-dependent* | ✓                   |
+| **Bracketed paste**         | ✓                   | ✕                   |
+| **[AltGr] Support**         | ✓                   | ✕                   |
+
+* VTE mode depends on Kitty Keyboard Protocol support for extended key events.
+
+[AltGr]: https://en.wikipedia.org/wiki/AltGr_key
 
 The legacy input reader can be used by enabling the `windows-legacy` feature. See the `event-read` example for usage.
 
 ## Credit
 
-Termina contains significant code sourced and/or modified from other projects, especially Crossterm and TermWiz. See "CREDIT" comments in the source for details on what was copied and what modifications were made. Since all copied code is licensed under MIT, Termina is offered under the MIT license as well at your option.
+Termina contains significant code sourced and/or modified from other projects, especially Crossterm and TermWiz. Credits for various implementations are marked in implementation notes sections. Since all copied code is licensed under MIT, Termina is offered under the MIT license as well at your option.
 
 <details><summary>Crossterm license...</summary>
 

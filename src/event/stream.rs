@@ -1,6 +1,16 @@
-// CREDIT: This is basically all crossterm.
-// <https://github.com/crossterm-rs/crossterm/blob/36d95b26a26e64b0f8c12edfe11f410a6d56a812/src/event/stream.rs>
-// I added the dummy stream for integration testing in Helix.
+//! Futures [`Stream`] adapter for terminal events.
+//!
+//! This module is available with the `event-stream` feature. It adapts the blocking
+//! [`EventReader`] API into a stream by parking a helper thread on the platform event source and
+//! waking the async task when matching input arrives.
+//!
+//! # Implementation Notes
+//!
+//! This is intentionally close to [crossterm's event stream]. The Termina-specific part is the
+//! shared [`EventReader`], which was added so the same reader model could support downstream
+//! integration tests as well as normal terminal event streams.
+//!
+//! [crossterm's event stream]: https://docs.rs/crossterm/latest/crossterm/event/
 
 use std::{
     io,
@@ -19,12 +29,32 @@ use futures_core::Stream;
 
 use super::{reader::EventReader, source::PlatformWaker, Event};
 
-/// A stream of `termina::Event`s received from the terminal.
+/// A stream of [`Event`] values received from the terminal.
 ///
 /// This type is only available if the `event-stream` feature is enabled.
 ///
-/// Create an event stream for a terminal by passing the reader [crate::Terminal::event_reader]
-/// into [EventStream::new] with a filter.
+/// Create an event stream for a terminal by passing the reader from
+/// [`crate::Terminal::event_reader`] into [`EventStream::new`] with a filter.
+///
+/// # Examples
+///
+/// Requires the `event-stream` feature and an async runtime.
+///
+/// ```ignore
+/// use futures_lite::StreamExt as _;
+/// use termina::{Event, EventStream, PlatformTerminal, Terminal};
+///
+/// # async fn demo() -> std::io::Result<()> {
+/// let reader = PlatformTerminal::new()?.event_reader();
+/// let mut stream = EventStream::new(reader, |_| true);
+/// while let Some(Ok(event)) = stream.next().await {
+///     if matches!(event, Event::FocusOut) {
+///         break;
+///     }
+/// }
+/// # Ok(())
+/// # }
+/// ```
 pub struct EventStream {
     waker: PlatformWaker,
     filter: Arc<dyn Fn(&Event) -> bool>,
@@ -34,6 +64,7 @@ pub struct EventStream {
     task_sender: SyncSender<Task>,
 }
 
+/// Internal task handed to the helper thread managing the blocking poll.
 #[derive(Debug)]
 struct Task {
     stream_waker: std::task::Waker,
@@ -42,6 +73,7 @@ struct Task {
 }
 
 impl EventStream {
+    /// Creates a stream backed by `reader` that only yields events accepted by `filter`.
     pub fn new<F>(reader: EventReader, filter: F) -> Self
     where
         F: Fn(&Event) -> bool + Send + Sync + 'static,

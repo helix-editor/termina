@@ -51,7 +51,10 @@ const CP_UTF8: CodePageID = 65001;
 
 #[derive(Debug)]
 pub enum Handle {
+    /// A Windows handle owned by Termina.
     Owned(OwnedHandle),
+
+    /// A borrowed process-global handle such as stdin or stdout.
     Borrowed(BorrowedHandle<'static>),
 }
 
@@ -68,11 +71,13 @@ impl Handle {
     // NOTE: stdin/stdout satisfy the `'static` lifetime requirements of `BorrowedHandle`.
     // > must remain open for the duration of the returned `BorrowedHandle`
     // This is true since stdin/stdout have process-global lifetimes.
+    /// Returns a borrowed handle for process stdin.
     pub fn stdin() -> Self {
         let stdin = io::stdin().as_raw_handle();
         Self::Borrowed(unsafe { BorrowedHandle::borrow_raw(stdin) })
     }
 
+    /// Returns a borrowed handle for process stdout.
     pub fn stdout() -> Self {
         let stdout = io::stdout().as_raw_handle();
         Self::Borrowed(unsafe { BorrowedHandle::borrow_raw(stdout) })
@@ -231,6 +236,10 @@ impl AsRawHandle for InputHandle {
     }
 }
 
+/// Windows console output handle.
+///
+/// `OutputHandle` writes bytes with `WriteFile` after `WindowsTerminal` enables virtual-terminal
+/// output processing. Panic hooks receive this type so they can write cleanup escape sequences.
 #[derive(Debug)]
 pub struct OutputHandle {
     handle: Handle,
@@ -356,6 +365,11 @@ fn open_file(path: &str) -> io::Result<File> {
 // <https://github.com/wezterm/wezterm/blob/a87358516004a652ad840bc1661bdf65ffc89b43/termwiz/src/terminal/windows.rs#L482-L860>
 // Also, the legacy Console API is not implemented.
 
+/// Windows terminal handle.
+///
+/// `WindowsTerminal` opens `CONIN$` or stdin for input and `CONOUT$` or stdout for output, enables
+/// virtual-terminal output processing, and captures console modes/code pages so they can be
+/// restored on drop.
 #[derive(Debug)]
 pub struct WindowsTerminal {
     input: InputHandle,
@@ -370,12 +384,18 @@ pub struct WindowsTerminal {
 }
 
 impl WindowsTerminal {
-    /// Creates a new terminal that reads using [VTE mode][InputReaderMode::Vte].
+    /// Opens the Windows terminal in [VTE input mode][InputReaderMode::Vte].
+    ///
+    /// This mode enables virtual-terminal input and sets the input/output code pages to UTF-8
+    /// while the terminal is active.
     pub fn new() -> io::Result<Self> {
         Self::with_mode_internal(InputReaderMode::Vte)
     }
 
-    /// Creates a new terminal using the specified [InputReaderMode].
+    /// Opens the Windows terminal using the specified [`InputReaderMode`].
+    ///
+    /// This is available only with the `windows-legacy` feature because legacy mode needs the
+    /// classic console-event parser compiled in.
     #[cfg(feature = "windows-legacy")]
     pub fn with_mode(mode: InputReaderMode) -> io::Result<Self> {
         // This is only exposed publicly when `windows-legacy` is enabled
