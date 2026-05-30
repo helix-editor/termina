@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 <!-- ## [Unreleased] -->
 
+## [v0.3.3] - 2026-05-30
+
+### Added
+
+* Improved public rustdocs ([#23](https://github.com/helix-editor/termina/pull/23))
+
+### Fixed
+
+* Fix Kitty Keyboard `Modifiers` bitflags representation ([c04c2c7672](https://github.com/helix-editor/termina/commit/c04c2c7672))
+
 ## [v0.3.2] - 2026-05-07
 
 ### Fixed

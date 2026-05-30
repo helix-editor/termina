@@ -1,6 +1,6 @@
 [package]
 name = "termina"
-version = "0.3.2"
+version = "0.3.3"
 authors = ["Michael Davis <mcarsondavis@gmail.com>"]
 description = "A cross-platform VT manipulation library"
 readme = "README.md"
