@@ -102,7 +102,7 @@ impl EventSource for UnixEventSource {
 
             // The input/read pipe has data.
             if read_ready {
-                let mut buffer = [0u8; 64];
+                let mut buffer = [0u8; 1024];
                 let read_count = read_complete(&mut self.read, &mut buffer)?;
                 if read_count > 0 {
                     self.parser
