@@ -129,7 +129,9 @@ pub(crate) mod legacy {
         MouseEventKind,
     };
     use crate::{Event, OneBased};
-    use windows_sys::Win32::Foundation::{GENERIC_READ, GENERIC_WRITE};
+    use windows_sys::Win32::Foundation::{
+        CloseHandle, GENERIC_READ, GENERIC_WRITE, INVALID_HANDLE_VALUE,
+    };
 
     use windows_sys::Win32::Storage::FileSystem::{
         CreateFileW, FILE_SHARE_READ, FILE_SHARE_WRITE, OPEN_EXISTING,
@@ -554,7 +556,12 @@ pub(crate) mod legacy {
             );
 
             let mut buffer_info = CONSOLE_SCREEN_BUFFER_INFO::default();
-            Console::GetConsoleScreenBufferInfo(handle, &mut buffer_info);
+            if handle != INVALID_HANDLE_VALUE {
+                Console::GetConsoleScreenBufferInfo(handle, &mut buffer_info);
+                // `CreateFileW` returns an owned handle; close it so each mouse event and cursor
+                // query doesn't leak a `CONOUT$` handle.
+                CloseHandle(handle);
+            }
             buffer_info
         }
     }
