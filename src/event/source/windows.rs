@@ -46,9 +46,7 @@ impl EventSource for WindowsEventSource {
                 return Ok(Some(event));
             }
 
-            let has_pending = self.input.has_pending_input_events()?;
-
-            if !has_pending {
+            if !self.input.has_pending_input_events()? {
                 let mut handles = [self.input.as_raw_handle(), self.waker.as_raw_handle()];
                 let wait = timeout
                     .leftover()
@@ -58,7 +56,10 @@ impl EventSource for WindowsEventSource {
                     WaitForMultipleObjects(handles.len() as u32, handles.as_mut_ptr(), 0, wait)
                 };
 
-                if result == WAIT_OBJECT_0 + 1 {
+                if result == WAIT_OBJECT_0 {
+                    // The input handle is signaled: there is input ready to be read. Fall through
+                    // to `read_console_input` below.
+                } else if result == WAIT_OBJECT_0 + 1 {
                     return Err(io::Error::new(
                         io::ErrorKind::Interrupted,
                         "Poll operation was woken up",
@@ -72,6 +73,7 @@ impl EventSource for WindowsEventSource {
                         ),
                     ));
                 } else {
+                    // `WAIT_TIMEOUT` (or an abandoned handle): no event arrived within the timeout.
                     return Ok(None);
                 }
             }
@@ -79,6 +81,13 @@ impl EventSource for WindowsEventSource {
             let records = self.input.read_console_input()?;
 
             self.parser.decode_input_records(records);
+
+            // Decoding the records may have produced an event (a key press, a resize, a parsed VT
+            // sequence). Return it before honoring a zero timeout, otherwise a non-blocking poll
+            // would discard input it just read.
+            if let Some(event) = self.parser.pop() {
+                return Ok(Some(event));
+            }
 
             if timeout.leftover().is_some_and(|t| t.is_zero()) {
                 break;
