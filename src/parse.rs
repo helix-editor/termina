@@ -1137,7 +1137,7 @@ fn parse_sgr(buffer: &str) -> Result<csi::Sgr> {
         "24" => Sgr::Underline(Underline::None),
         "4" => Sgr::Underline(Underline::Single),
         "21" => Sgr::Underline(Underline::Double),
-        "4:3 " => Sgr::Underline(Underline::Curly),
+        "4:3" => Sgr::Underline(Underline::Curly),
         "4:4" => Sgr::Underline(Underline::Dotted),
         "4:5" => Sgr::Underline(Underline::Dashed),
         "25" => Sgr::Blink(Blink::None),
@@ -1257,6 +1257,21 @@ mod test {
                     csi::Sgr::Blink(style::Blink::Slow),
                     csi::Sgr::Reverse(true),
                 ])
+            })
+        );
+    }
+
+    #[test]
+    fn parse_dcs_sgr_curly_underline() {
+        // A DECRPSS reply describing a curly (`4:3`) underline must round-trip through `parse_sgr`.
+        let event = parse_event(b"\x1bP1$r4:3m\x1b\\", false).unwrap().unwrap();
+        assert_eq!(
+            event,
+            Event::Dcs(dcs::Dcs::Response {
+                is_request_valid: true,
+                value: dcs::DcsResponse::GraphicRendition(vec![csi::Sgr::Underline(
+                    style::Underline::Curly
+                )])
             })
         );
     }
