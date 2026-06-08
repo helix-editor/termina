@@ -104,15 +104,21 @@ impl EventSource for UnixEventSource {
             if read_ready {
                 let mut buffer = [0u8; 1024];
                 let read_count = read_complete(&mut self.read, &mut buffer)?;
-                if read_count > 0 {
-                    self.parser
-                        .parse(&buffer[..read_count], read_count == buffer.len());
+                if read_count == 0 {
+                    // `poll` reported the read side ready but no bytes are available. On a blocking
+                    // fd (the `fionbio` call in the terminal module is disabled) that means
+                    // end-of-file: the terminal input was closed, e.g. the pty master went away.
+                    // Returning `Ok(None)` here would busy-loop at 100% CPU because `poll` keeps
+                    // reporting EOF as readable, so surface it as an error and let the caller stop.
+                    return Err(io::Error::new(
+                        io::ErrorKind::UnexpectedEof,
+                        "terminal input reached end-of-file",
+                    ));
                 }
+                self.parser
+                    .parse(&buffer[..read_count], read_count == buffer.len());
                 if let Some(event) = self.parser.pop() {
                     return Ok(Some(event));
-                }
-                if read_count == 0 {
-                    break;
                 }
             }
 
