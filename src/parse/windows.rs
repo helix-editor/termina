@@ -59,6 +59,7 @@ impl Parser {
                             // `read_console_input` uses `ReadConsoleInputA` so we should treat the
                             // key code as a byte and add it to the buffer.
                             self.buffer.push(byte);
+                            self.process_bytes(true);
                         }
                         InputReaderMode::Legacy => {
                             #[cfg(feature = "windows-legacy")]
