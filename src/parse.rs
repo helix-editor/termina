@@ -779,8 +779,8 @@ fn parse_csi_rxvt_mouse(buffer: &[u8]) -> Result<Option<Event>> {
         .ok_or(MalformedSequenceError)?;
     let (kind, modifiers) = parse_cb(cb)?;
 
-    let cx = next_parsed::<u16>(&mut split)? - 1;
-    let cy = next_parsed::<u16>(&mut split)? - 1;
+    let cx = next_parsed::<u16>(&mut split)?.saturating_sub(1);
+    let cy = next_parsed::<u16>(&mut split)?.saturating_sub(1);
 
     Ok(Some(Event::Mouse(MouseEvent {
         kind,
@@ -835,8 +835,8 @@ fn parse_csi_sgr_mouse(buffer: &[u8]) -> Result<Option<Event>> {
     // See http://www.xfree86.org/current/ctlseqs.html#Mouse%20Tracking
     // The upper left character position on the terminal is denoted as 1,1.
     // Subtract 1 to keep it synced with cursor
-    let cx = next_parsed::<u16>(&mut split)? - 1;
-    let cy = next_parsed::<u16>(&mut split)? - 1;
+    let cx = next_parsed::<u16>(&mut split)?.saturating_sub(1);
+    let cy = next_parsed::<u16>(&mut split)?.saturating_sub(1);
 
     // When button 3 in Cb is used to represent mouse release, you can't tell which button was
     // released. SGR mode solves this by having the sequence end with a lowercase m if it's a
