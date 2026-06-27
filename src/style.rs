@@ -227,6 +227,9 @@ impl FromStr for RgbColor {
             };
             Ok(Self::new(r, g, b))
         } else if let Some(hex) = s.strip_prefix('#') {
+            if !hex.is_ascii() {
+                return Err(InvalidFormatError);
+            }
             let (r, g, b) = match hex.len() {
                 3 => (
                     Self::channel_from_hex(&hex[0..1])?,
@@ -744,5 +747,11 @@ mod test {
         assert_eq!("#282828".parse(), Ok(RgbColor::new(40, 40, 40)));
         assert_eq!("rgb:28/28/28".parse(), Ok(RgbColor::new(40, 40, 40)));
         assert_eq!("rgb:2828/2828/2828".parse(), Ok(RgbColor::new(40, 40, 40)));
+    }
+
+    #[test]
+    fn parse_color_non_ascii_hex_is_err_not_panic() {
+        assert_eq!("#é2".parse::<RgbColor>(), Err(InvalidFormatError));
+        assert_eq!("#ééé".parse::<RgbColor>(), Err(InvalidFormatError));
     }
 }
