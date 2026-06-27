@@ -570,7 +570,7 @@ pub(crate) mod legacy {
     // This means that when the mouse cursor is at the top left it will be x: 0, y: 2295 (e.g. y = number of cells counting from the absolute buffer height) instead of relative x: 0, y: 0 to the window.
     fn parse_relative_y(y: i16) -> std::io::Result<i16> {
         let window_size = screen_buffer().srWindow;
-        Ok(y - window_size.Top)
+        Ok((y - window_size.Top).max(0))
     }
 
     pub fn cursor_position() -> io::Result<(OneBased, OneBased)> {
@@ -578,7 +578,7 @@ pub(crate) mod legacy {
         let position = buffer.dwCursorPosition;
         Ok((
             OneBased::from_zero_based(position.X as u16),
-            OneBased::from_zero_based((position.Y - buffer.srWindow.Top) as u16),
+            OneBased::from_zero_based((position.Y - buffer.srWindow.Top).max(0) as u16),
         ))
     }
 
