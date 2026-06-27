@@ -290,14 +290,19 @@ impl Display for Sgr {
                 let mut ps_written = 0;
                 let mut first = true;
                 let mut write = |sgr: Self, n_ps: u16| {
-                    // If writing this parameter would exceed the budget, finish this CSI sequence
-                    // and start a new one which will start with this SGR.
-                    ps_written += n_ps;
-                    if ps_written > ps_budget {
+                    if first {
+                        // Nothing to split before the first parameter: write it as-is, even if it
+                        // alone exceeds the budget. (Splitting here would emit a leading `CSI m`,
+                        // i.e. an unintended SGR reset.)
+                        ps_written = n_ps;
+                    } else if ps_written + n_ps > ps_budget {
+                        // Writing this parameter would exceed the budget, finish this CSI sequence
+                        // and start a new one beginning with this SGR.
                         write!(f, "m{}", super::CSI)?;
                         ps_written = n_ps;
-                    } else if !first {
+                    } else {
                         f.write_str(";")?;
+                        ps_written += n_ps;
                     }
                     first = false;
                     write!(f, "{sgr}")
@@ -2345,6 +2350,21 @@ mod test {
         // sequence up in the middle: that would make it nonsense.
         attributes.parameter_chunk_size = NonZeroU16::new(12).unwrap();
         assert_eq!(expected, Csi::Sgr(Sgr::Attributes(attributes)).to_string());
+    }
+
+    #[test]
+    fn sgr_attributes_small_chunk_size_no_leading_reset() {
+        // A `parameter_chunk_size` smaller than a single color group must not emit a leading
+        // empty SGR (`\x1b[m`), that would reset all attributes. There's nothing to split
+        // before the first parameter, so it is written as-is.
+        let attributes = SgrAttributes {
+            foreground: Some(ColorSpec::TrueColor(RgbColor::new(1, 2, 3).into())),
+            parameter_chunk_size: NonZeroU16::new(4).unwrap(),
+            ..Default::default()
+        };
+        let s = Csi::Sgr(Sgr::Attributes(attributes)).to_string();
+        assert!(!s.starts_with("\x1b[m"), "spurious leading reset: {s:?}");
+        assert_eq!(s, "\x1b[38;2;1;2;3m");
     }
 
     #[test]
