@@ -10,9 +10,10 @@ use std::{
 use windows_sys::Win32::{
     Storage::FileSystem::WriteFile,
     System::Console::{
-        self, GetConsoleCP, GetConsoleMode, GetConsoleOutputCP, GetConsoleScreenBufferInfo,
-        GetNumberOfConsoleInputEvents, ReadConsoleInputA, ReadConsoleInputW, SetConsoleCP,
-        SetConsoleMode, SetConsoleOutputCP, CONSOLE_MODE, CONSOLE_SCREEN_BUFFER_INFO, INPUT_RECORD,
+        self, FlushConsoleInputBuffer, GetConsoleCP, GetConsoleMode, GetConsoleOutputCP,
+        GetConsoleScreenBufferInfo, GetNumberOfConsoleInputEvents, ReadConsoleInputA,
+        ReadConsoleInputW, SetConsoleCP, SetConsoleMode, SetConsoleOutputCP, CONSOLE_MODE,
+        CONSOLE_SCREEN_BUFFER_INFO, INPUT_RECORD,
     },
 };
 
@@ -190,6 +191,21 @@ impl InputHandle {
             );
         }
         Ok(num > 0)
+    }
+
+    /// Discard every input record still queued in the console input buffer.
+    ///
+    /// While raw mode and mouse/window reporting are active the console keeps queuing records.
+    /// Draining the queue on teardown drops that backlog so it can't leak onto the next shell
+    /// prompt.
+    fn flush(&mut self) -> io::Result<()> {
+        if unsafe { FlushConsoleInputBuffer(self.as_raw_handle()) } == 0 {
+            bail!(
+                "failed to flush console input buffer: {}",
+                io::Error::last_os_error()
+            );
+        }
+        Ok(())
     }
 
     pub fn read_console_input(&mut self) -> io::Result<&[INPUT_RECORD]> {
@@ -518,6 +534,7 @@ impl Terminal for WindowsTerminal {
         std::panic::set_hook(Box::new(move |info| {
             if let Ok((mut input, mut output)) = open_pty(mode) {
                 f(&mut output);
+                let _ = input.flush();
                 let _ = input.set_code_page(original_input_cp);
                 let _ = input.set_mode(original_input_mode);
                 let _ = output.set_code_page(original_output_cp);
@@ -533,6 +550,7 @@ impl Drop for WindowsTerminal {
     fn drop(&mut self) {
         if !self.has_panic_hook || !std::thread::panicking() {
             let _ = self.flush();
+            let _ = self.input.flush(); // Drain unread input before handing the console back in cooked mode
             let _ = self.input.set_code_page(self.original_input_cp);
             let _ = self.output.get_mut().set_code_page(self.original_output_cp);
             let _ = self.input.set_mode(self.original_input_mode);
