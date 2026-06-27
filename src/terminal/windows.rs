@@ -428,28 +428,53 @@ impl WindowsTerminal {
         let original_output_mode = output.get_mode()?;
         let original_input_cp = input.get_code_page()?;
         let original_output_cp = output.get_code_page()?;
-        if mode == InputReaderMode::Vte {
-            input.set_code_page(CP_UTF8)?;
-            output.set_code_page(CP_UTF8)?;
-        }
 
-        // Enable VT processing for the output handle.
-        let desired_output_mode = original_output_mode
-            | Console::ENABLE_VIRTUAL_TERMINAL_PROCESSING
-            | Console::DISABLE_NEWLINE_AUTO_RETURN;
-        if output.set_mode(desired_output_mode).is_err() {
-            bail!("virtual terminal processing could not be enabled for the output handle");
-        }
-
-        if mode == InputReaderMode::Vte {
-            // And now the input handle too.
-            let desired_input_mode = original_input_mode | Console::ENABLE_VIRTUAL_TERMINAL_INPUT;
-            if input.set_mode(desired_input_mode).is_err() {
-                bail!("virtual terminal processing could not be enabled for the input handle");
+        // Switch the console to UTF-8 + VT modes. Each step mutates global console state, and a
+        // later step can fail. Because there is no `WindowsTerminal` yet, `Drop` won't run, so on
+        // any failure we must roll back to the original values here.
+        let reader = match (|| -> io::Result<EventReader> {
+            if mode == InputReaderMode::Vte {
+                input.set_code_page(CP_UTF8)?;
+                output.set_code_page(CP_UTF8)?;
             }
-        }
 
-        let reader = EventReader::new(WindowsEventSource::new(input.try_clone()?, mode)?);
+            // Enable VT processing for the output handle.
+            let desired_output_mode = original_output_mode
+                | Console::ENABLE_VIRTUAL_TERMINAL_PROCESSING
+                | Console::DISABLE_NEWLINE_AUTO_RETURN;
+            output.set_mode(desired_output_mode).map_err(|_| {
+                io::Error::new(
+                    io::ErrorKind::Other,
+                    "virtual terminal processing could not be enabled for the output handle",
+                )
+            })?;
+
+            if mode == InputReaderMode::Vte {
+                // And now the input handle too.
+                let desired_input_mode =
+                    original_input_mode | Console::ENABLE_VIRTUAL_TERMINAL_INPUT;
+                input.set_mode(desired_input_mode).map_err(|_| {
+                    io::Error::new(
+                        io::ErrorKind::Other,
+                        "virtual terminal processing could not be enabled for the input handle",
+                    )
+                })?;
+            }
+
+            Ok(EventReader::new(WindowsEventSource::new(
+                input.try_clone()?,
+                mode,
+            )?))
+        })() {
+            Ok(reader) => reader,
+            Err(err) => {
+                let _ = input.set_code_page(original_input_cp);
+                let _ = output.set_code_page(original_output_cp);
+                let _ = input.set_mode(original_input_mode);
+                let _ = output.set_mode(original_output_mode);
+                return Err(err);
+            }
+        };
 
         Ok(Self {
             input,
