@@ -88,10 +88,12 @@ use super::{
 #[derive(Debug, Clone)]
 pub struct EventReader {
     shared: Arc<Mutex<Shared>>,
+    waker: PlatformWaker,
 }
 
 impl EventReader {
     pub(crate) fn new(source: PlatformEventSource) -> Self {
+        let waker = source.waker();
         let shared = Shared {
             events: VecDeque::with_capacity(32),
             source,
@@ -99,13 +101,18 @@ impl EventReader {
         };
         Self {
             shared: Arc::new(Mutex::new(shared)),
+            waker,
         }
     }
 
     /// Returns a platform-specific waker that can unblock [`poll`](Self::poll) calls.
+    ///
+    /// The waker is cheap to clone and can be freely moved to another thread. Calling its
+    /// `wake` method does not require the calling thread to hold the [`EventReader`]'s internal
+    /// lock, so it can be called while a [`read`](Self::read) or [`poll`](Self::poll) call is
+    /// blocked on another thread or clone of this reader.
     pub fn waker(&self) -> PlatformWaker {
-        let reader = self.shared.lock();
-        reader.source.waker()
+        self.waker.clone()
     }
 
     /// Polls for availability of an event matching `filter`.
