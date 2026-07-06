@@ -6,9 +6,13 @@ mod windows;
 use std::time::{Duration, Instant};
 
 #[cfg(unix)]
-pub(crate) use unix::{UnixEventSource, UnixWaker};
+pub(crate) use unix::UnixEventSource;
+#[cfg(unix)]
+pub use unix::UnixWaker;
 #[cfg(windows)]
-pub(crate) use windows::{WindowsEventSource, WindowsWaker};
+pub(crate) use windows::WindowsEventSource;
+#[cfg(windows)]
+pub use windows::WindowsWaker;
 
 #[cfg(unix)]
 pub(crate) type PlatformEventSource = UnixEventSource;
@@ -16,9 +20,9 @@ pub(crate) type PlatformEventSource = UnixEventSource;
 pub(crate) type PlatformEventSource = WindowsEventSource;
 
 #[cfg(unix)]
-pub(crate) type PlatformWaker = UnixWaker;
+pub type PlatformWaker = UnixWaker;
 #[cfg(windows)]
-pub(crate) type PlatformWaker = WindowsWaker;
+pub type PlatformWaker = WindowsWaker;
 
 // CREDIT: <https://github.com/crossterm-rs/crossterm/blob/36d95b26a26e64b0f8c12edfe11f410a6d56a812/src/event/source.rs#L12-L27>
 pub(crate) trait EventSource: Send + Sync {

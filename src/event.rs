@@ -42,6 +42,8 @@ pub(crate) mod source;
 #[cfg(feature = "event-stream")]
 pub(crate) mod stream;
 
+pub use source::PlatformWaker;
+
 /// A parsed terminal input event or terminal protocol response.
 ///
 /// Values of this type are returned by [`EventReader::read`], [`Terminal::read`], and

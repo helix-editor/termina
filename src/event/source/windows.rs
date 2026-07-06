@@ -121,12 +121,17 @@ impl AsRawHandle for EventHandle {
     }
 }
 
-#[derive(Debug)]
+/// A handle that can unblock a pending [`EventReader::poll`](crate::EventReader::poll) call
+/// from another thread.
+///
+/// Cloning this type is cheap. All clones wake the same underlying reader.
+#[derive(Debug, Clone)]
 pub struct WindowsWaker {
     handle: Arc<EventHandle>,
 }
 
 impl WindowsWaker {
+    /// Unblocks a pending [`EventReader::poll`](crate::EventReader::poll) call.
     pub fn wake(&self) -> io::Result<()> {
         if unsafe { Threading::SetEvent(self.handle.as_raw_handle()) } == 0 {
             Err(io::Error::last_os_error())

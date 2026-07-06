@@ -58,7 +58,7 @@ mod terminal;
 
 use std::{fmt, num::NonZeroU16};
 
-pub use event::{reader::EventReader, Event};
+pub use event::{reader::EventReader, Event, PlatformWaker};
 #[cfg(windows)]
 pub use parse::windows;
 pub use parse::Parser;

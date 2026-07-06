@@ -31,12 +31,17 @@ pub struct UnixEventSource {
     wake_pipe_write: Arc<Mutex<UnixStream>>,
 }
 
+/// A handle that can unblock a pending [`EventReader::poll`](crate::EventReader::poll) call
+/// from another thread.
+///
+/// Cloning this type is cheap. All clones wake the same underlying reader.
 #[derive(Debug, Clone)]
 pub struct UnixWaker {
     inner: Arc<Mutex<UnixStream>>,
 }
 
 impl UnixWaker {
+    /// Unblocks a pending [`EventReader::poll`](crate::EventReader::poll) call.
     pub fn wake(&self) -> io::Result<()> {
         self.inner.lock().write_all(&[0])
     }
