@@ -35,6 +35,9 @@ features = [
   "event",
 ]
 
+[dev-dependencies]
+criterion = { version = "0.8", default-features = false, features = ["cargo_bench_support"] }
+
 [target.'cfg(windows)'.dependencies.windows-sys]
 # TODO: this could probably be loosened.
 version = ">=0.60"
@@ -54,3 +57,7 @@ features = [
 [[example]]
 name = "event-read"
 required-features = ["windows-legacy"]
+
+[[bench]]
+name = "parse"
+harness = false
