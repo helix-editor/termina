@@ -13,8 +13,8 @@ Termina is a cross between [Crossterm](https://github.com/crossterm-rs/crossterm
 
 Termina is able to "speak text/VT" on Windows. This is made possible by Microsoft's investment into [ConPTY](https://devblogs.microsoft.com/commandline/windows-command-line-introducing-the-windows-pseudo-console-conpty/). This means that this input mode requires 64-bit Windows 10.0.17763 (released around Fall 2018) or later ([same as WezTerm](https://wezterm.org/install/windows.html)). However, using VT mode on Windows
 means the terminal you use needs to support the Kitty Keyboard Protocol in order to handle some complex key combinations.
-Windows Terminal, notably, does not implement this protocol. However, using the VT protocol allows for some newer features to work, such as bracketed paste.
-This means there is no single answer for which protocol to use - it depends on your use case.
+Windows Terminal supports the protocol as of Preview [v1.25.622.0](https://github.com/microsoft/terminal/releases/tag/v1.25.622.0), so VT mode is a good default there, and it also unlocks newer features such as bracketed paste.
+Not every terminal implements the protocol, though, so there is no single answer for which mode to use - it depends on your terminal and use case.
 
 See feature comparison below.
 
