@@ -390,16 +390,26 @@ where
         .map_err(|_| MalformedSequenceError)
 }
 
-fn modifier_and_kind_parsed(iter: &mut dyn Iterator<Item = &str>) -> Result<(u8, u8)> {
-    let mut sub_split = iter.next().ok_or(MalformedSequenceError)?.split(':');
-
-    let modifier_mask = next_parsed::<u8>(&mut sub_split)?;
-
-    if let Ok(kind_code) = next_parsed::<u8>(&mut sub_split) {
-        Ok((modifier_mask, kind_code))
-    } else {
-        Ok((modifier_mask, 1))
+fn modifier_and_kind_parsed(parameter: &str) -> Result<(u16, u8)> {
+    let mut fields = parameter.split(':');
+    let modifier_mask = next_parsed::<u16>(&mut fields)?;
+    if !(1..=256).contains(&modifier_mask) {
+        bail!();
     }
+    let kind = match fields.next() {
+        Some(field) => {
+            let kind = field.parse::<u8>().map_err(|_| MalformedSequenceError)?;
+            if !(1..=3).contains(&kind) {
+                bail!();
+            }
+            kind
+        }
+        None => 1,
+    };
+    if fields.next().is_some() {
+        bail!();
+    }
+    Ok((modifier_mask, kind))
 }
 
 fn parse_csi_u_encoded_key_code(buffer: &[u8]) -> Result<Option<Event>> {
@@ -435,26 +445,7 @@ fn parse_csi_u_encoded_key_code(buffer: &[u8]) -> Result<Option<Event>> {
     let (modifiers, kind, state_from_modifiers) = match split.next() {
         None | Some("") => (Modifiers::NONE, KeyEventKind::Press, KeyEventState::NONE),
         Some(modifier_part) => {
-            let mut sub_split = modifier_part.split(':');
-            let modifier_mask_str = sub_split.next().ok_or(MalformedSequenceError)?;
-            let modifier_mask = modifier_mask_str
-                .parse::<u16>()
-                .map_err(|_| MalformedSequenceError)?;
-            if modifier_mask == 0 || modifier_mask > 256 {
-                bail!();
-            }
-            let kind_code = if let Some(kind_str) = sub_split.next() {
-                let k = kind_str.parse::<u8>().map_err(|_| MalformedSequenceError)?;
-                if !(1..=3).contains(&k) {
-                    bail!();
-                }
-                k
-            } else {
-                1
-            };
-            if sub_split.next().is_some() {
-                bail!();
-            }
+            let (modifier_mask, kind_code) = modifier_and_kind_parsed(modifier_part)?;
             (
                 parse_modifiers(modifier_mask),
                 parse_key_event_kind(kind_code),
@@ -594,24 +585,28 @@ fn parse_csi_modifier_key_code(buffer: &[u8]) -> Result<Option<Event>> {
 
     split.next();
 
-    let (modifiers, kind) =
-        if let Ok((modifier_mask, kind_code)) = modifier_and_kind_parsed(&mut split) {
-            (
-                parse_modifiers(modifier_mask as u16),
-                parse_key_event_kind(kind_code),
-            )
-        } else if buffer.len() > 3 {
-            (
-                parse_modifiers(
-                    (buffer[buffer.len() - 2] as char)
-                        .to_digit(10)
-                        .ok_or(MalformedSequenceError)? as u16,
-                ),
-                KeyEventKind::Press,
-            )
-        } else {
-            (Modifiers::NONE, KeyEventKind::Press)
-        };
+    let (modifiers, kind, state) = if let Some(parameter) = split.next() {
+        let (modifier_mask, kind_code) = modifier_and_kind_parsed(parameter)?;
+        (
+            parse_modifiers(modifier_mask),
+            parse_key_event_kind(kind_code),
+            parse_modifiers_to_state(modifier_mask),
+        )
+    } else if buffer.len() > 3 {
+        let modifier_mask = (buffer[buffer.len() - 2] as char)
+            .to_digit(10)
+            .ok_or(MalformedSequenceError)? as u16;
+        (
+            parse_modifiers(modifier_mask),
+            KeyEventKind::Press,
+            parse_modifiers_to_state(modifier_mask),
+        )
+    } else {
+        (Modifiers::NONE, KeyEventKind::Press, KeyEventState::NONE)
+    };
+    if split.next().is_some() {
+        bail!();
+    }
     let key = buffer[buffer.len() - 1];
 
     let code = match key {
@@ -632,7 +627,7 @@ fn parse_csi_modifier_key_code(buffer: &[u8]) -> Result<Option<Event>> {
         code,
         modifiers,
         kind,
-        state: KeyEventState::NONE,
+        state,
         enhancements: KeyEventEnhancements::new(),
     });
 
@@ -649,16 +644,19 @@ fn parse_csi_special_key_code(buffer: &[u8]) -> Result<Option<Event>> {
     // This CSI sequence can be a list of semicolon-separated numbers.
     let first = next_parsed::<u8>(&mut split)?;
 
-    let (modifiers, kind, state) =
-        if let Ok((modifier_mask, kind_code)) = modifier_and_kind_parsed(&mut split) {
-            (
-                parse_modifiers(modifier_mask as u16),
-                parse_key_event_kind(kind_code),
-                parse_modifiers_to_state(modifier_mask as u16),
-            )
-        } else {
-            (Modifiers::NONE, KeyEventKind::Press, KeyEventState::NONE)
-        };
+    let (modifiers, kind, state) = if let Some(parameter) = split.next() {
+        let (modifier_mask, kind_code) = modifier_and_kind_parsed(parameter)?;
+        (
+            parse_modifiers(modifier_mask),
+            parse_key_event_kind(kind_code),
+            parse_modifiers_to_state(modifier_mask),
+        )
+    } else {
+        (Modifiers::NONE, KeyEventKind::Press, KeyEventState::NONE)
+    };
+    if split.next().is_some() {
+        bail!();
+    }
 
     let code = match first {
         1 | 7 => KeyCode::Home,
@@ -1008,7 +1006,9 @@ fn parse_csi_keyboard_enhancement_flags(buffer: &[u8]) -> Result<Option<Event>> 
         return Ok(None);
     }
 
-    let bits = buffer[3];
+    let bits = str::from_utf8(&buffer[3..buffer.len() - 1])?
+        .parse::<u8>()
+        .map_err(|_| MalformedSequenceError)?;
     let mut flags = KittyKeyboardFlags::empty();
 
     if bits & 1 != 0 {
@@ -1023,10 +1023,9 @@ fn parse_csi_keyboard_enhancement_flags(buffer: &[u8]) -> Result<Option<Event>> 
     if bits & 8 != 0 {
         flags |= KittyKeyboardFlags::REPORT_ALL_KEYS_AS_ESCAPE_CODES;
     }
-    // TODO: support this
-    // if bits & 16 != 0 {
-    //     flags |= KeyboardEnhancementFlags::REPORT_ASSOCIATED_TEXT;
-    // }
+    if bits & 16 != 0 {
+        flags |= KittyKeyboardFlags::REPORT_ASSOCIATED_TEXT;
+    }
 
     Ok(Some(Event::Csi(Csi::Keyboard(csi::Keyboard::ReportFlags(
         flags,
@@ -1566,6 +1565,58 @@ mod test {
                     associated_text: None,
                 }
             })
+        );
+    }
+
+    #[test]
+    fn parse_modifier_key_state_matches_protocol_event_state() {
+        let Event::Key(press) = parse_event(b"\x1b[57443;3:1u", false).unwrap().unwrap() else {
+            panic!("expected key event");
+        };
+        assert_eq!(press.code, KeyCode::Modifier(ModifierKeyCode::LeftAlt));
+        assert_eq!(press.kind, KeyEventKind::Press);
+        assert_eq!(press.modifiers, Modifiers::ALT);
+
+        let Event::Key(release) = parse_event(b"\x1b[57443;1:3u", false).unwrap().unwrap() else {
+            panic!("expected key event");
+        };
+        assert_eq!(release.code, KeyCode::Modifier(ModifierKeyCode::LeftAlt));
+        assert_eq!(release.kind, KeyEventKind::Release);
+        assert_eq!(release.modifiers, Modifiers::NONE);
+    }
+
+    #[test]
+    fn parse_enhanced_legacy_key_modifiers_strictly() {
+        let Event::Key(key) = parse_event(b"\x1b[1;256A", false).unwrap().unwrap() else {
+            panic!("expected key event");
+        };
+        assert_eq!(key.code, KeyCode::Up);
+        assert_eq!(
+            key.state,
+            KeyEventState::CAPS_LOCK | KeyEventState::NUM_LOCK
+        );
+
+        for malformed in [
+            b"\x1b[1;0A".as_slice(),
+            b"\x1b[1;257A",
+            b"\x1b[1;2:0A",
+            b"\x1b[1;2:4A",
+            b"\x1b[1;2:1:1A",
+            b"\x1b[1;2;3A",
+            b"\x1b[3;2:4~",
+        ] {
+            assert!(parse_event(malformed, false).is_err(), "{malformed:?}");
+        }
+    }
+
+    #[test]
+    fn parse_all_keyboard_enhancement_flags() {
+        let event = parse_event(b"\x1b[?31u", false).unwrap().unwrap();
+        assert_eq!(
+            event,
+            Event::Csi(Csi::Keyboard(csi::Keyboard::ReportFlags(
+                KittyKeyboardFlags::all()
+            )))
         );
     }
 }
