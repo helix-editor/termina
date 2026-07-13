@@ -39,8 +39,8 @@ use crate::{
         dcs, osc,
     },
     event::{
-        KeyCode, KeyEvent, KeyEventKind, KeyEventState, MediaKeyCode, ModifierKeyCode, Modifiers,
-        MouseButton, MouseEvent, MouseEventKind,
+        KeyCode, KeyEvent, KeyEventEnhancements, KeyEventKind, KeyEventState, MediaKeyCode,
+        ModifierKeyCode, Modifiers, MouseButton, MouseEvent, MouseEventKind,
     },
     style, Event,
 };
@@ -295,6 +295,7 @@ fn parse_csi(buffer: &[u8]) -> Result<Option<Event>> {
             modifiers: Modifiers::SHIFT,
             kind: KeyEventKind::Press,
             state: KeyEventState::NONE,
+            enhancements: KeyEventEnhancements::new(),
         })),
         b'M' => return parse_csi_normal_mouse(buffer),
         b'<' => return parse_csi_sgr_mouse(buffer),
@@ -421,26 +422,48 @@ fn parse_csi_u_encoded_key_code(buffer: &[u8]) -> Result<Option<Event>> {
     // enabled progressively. The full sequence is parsed as:
     //
     //     CSI unicode-key-code:alternate-key-codes ; modifiers:event-type ; text-as-codepoints u
-    let mut codepoints = split.next().ok_or(MalformedSequenceError)?.split(':');
+    let first_part = split.next().ok_or(MalformedSequenceError)?;
+    let parts: Vec<&str> = first_part.split(':').collect();
+    if parts.len() > 3 {
+        bail!();
+    }
 
-    let codepoint = codepoints
-        .next()
-        .ok_or(MalformedSequenceError)?
+    let codepoint = parts[0]
         .parse::<u32>()
         .map_err(|_| MalformedSequenceError)?;
 
-    let (mut modifiers, kind, state_from_modifiers) =
-        if let Ok((modifier_mask, kind_code)) = modifier_and_kind_parsed(&mut split) {
+    let (modifiers, kind, state_from_modifiers) = match split.next() {
+        None | Some("") => (Modifiers::NONE, KeyEventKind::Press, KeyEventState::NONE),
+        Some(modifier_part) => {
+            let mut sub_split = modifier_part.split(':');
+            let modifier_mask_str = sub_split.next().ok_or(MalformedSequenceError)?;
+            let modifier_mask = modifier_mask_str
+                .parse::<u16>()
+                .map_err(|_| MalformedSequenceError)?;
+            if modifier_mask == 0 || modifier_mask > 256 {
+                bail!();
+            }
+            let kind_code = if let Some(kind_str) = sub_split.next() {
+                let k = kind_str.parse::<u8>().map_err(|_| MalformedSequenceError)?;
+                if !(1..=3).contains(&k) {
+                    bail!();
+                }
+                k
+            } else {
+                1
+            };
+            if sub_split.next().is_some() {
+                bail!();
+            }
             (
                 parse_modifiers(modifier_mask),
                 parse_key_event_kind(kind_code),
                 parse_modifiers_to_state(modifier_mask),
             )
-        } else {
-            (Modifiers::NONE, KeyEventKind::Press, KeyEventState::NONE)
-        };
+        }
+    };
 
-    let (mut code, state_from_keycode) = {
+    let (code, state_from_keycode) = {
         if let Some((special_key_code, state)) = translate_functional_key_code(codepoint) {
             (special_key_code, state)
         } else if let Some(c) = char::from_u32(codepoint) {
@@ -448,13 +471,6 @@ fn parse_csi_u_encoded_key_code(buffer: &[u8]) -> Result<Option<Event>> {
                 match c {
                     '\x1B' => KeyCode::Escape,
                     '\r' => KeyCode::Enter,
-                    /*
-                    // Issue #371: \n = 0xA, which is also the keycode for Ctrl+J. The only reason we get
-                    // newlines as input is because the terminal converts \r into \n for us. When we
-                    // enter raw mode, we disable that, so \n no longer has any meaning - it's better to
-                    // use Ctrl+J. Waiting to handle it here means it gets picked up later
-                    '\n' if !crate::terminal::sys::is_raw_mode_enabled() => KeyCode::Enter,
-                    */
                     '\t' => {
                         if modifiers.contains(Modifiers::SHIFT) {
                             KeyCode::BackTab
@@ -472,43 +488,43 @@ fn parse_csi_u_encoded_key_code(buffer: &[u8]) -> Result<Option<Event>> {
         }
     };
 
-    if let KeyCode::Modifier(modifier_keycode) = code {
-        match modifier_keycode {
-            ModifierKeyCode::LeftAlt | ModifierKeyCode::RightAlt => {
-                modifiers.set(Modifiers::ALT, true)
-            }
-            ModifierKeyCode::LeftControl | ModifierKeyCode::RightControl => {
-                modifiers.set(Modifiers::CONTROL, true)
-            }
-            ModifierKeyCode::LeftShift | ModifierKeyCode::RightShift => {
-                modifiers.set(Modifiers::SHIFT, true)
-            }
-            ModifierKeyCode::LeftSuper | ModifierKeyCode::RightSuper => {
-                modifiers.set(Modifiers::SUPER, true)
-            }
-            ModifierKeyCode::LeftHyper | ModifierKeyCode::RightHyper => {
-                modifiers.set(Modifiers::HYPER, true)
-            }
-            ModifierKeyCode::LeftMeta | ModifierKeyCode::RightMeta => {
-                modifiers.set(Modifiers::META, true)
-            }
-            _ => {}
-        }
-    }
+    let shifted_key = if parts.len() > 1 && !parts[1].is_empty() {
+        let cp = parts[1]
+            .parse::<u32>()
+            .map_err(|_| MalformedSequenceError)?;
+        Some(char::from_u32(cp).ok_or(MalformedSequenceError)?)
+    } else {
+        None
+    };
 
-    // When the "report alternate keys" flag is enabled in the Kitty Keyboard Protocol
-    // and the terminal sends a keyboard event containing shift, the sequence will
-    // contain an additional codepoint separated by a ':' character which contains
-    // the shifted character according to the keyboard layout.
-    if modifiers.contains(Modifiers::SHIFT) {
-        if let Some(shifted_c) = codepoints
-            .next()
-            .and_then(|codepoint| codepoint.parse::<u32>().ok())
-            .and_then(char::from_u32)
-        {
-            code = KeyCode::Char(shifted_c);
-            modifiers.set(Modifiers::SHIFT, false);
+    let base_layout_key = if parts.len() > 2 && !parts[2].is_empty() {
+        let cp = parts[2]
+            .parse::<u32>()
+            .map_err(|_| MalformedSequenceError)?;
+        Some(char::from_u32(cp).ok_or(MalformedSequenceError)?)
+    } else {
+        None
+    };
+
+    let associated_text = match split.next() {
+        None => None,
+        Some(text_str) => {
+            if text_str.is_empty() {
+                Some(String::new())
+            } else {
+                let mut text = String::new();
+                for part in text_str.split(':') {
+                    let cp = part.parse::<u32>().map_err(|_| MalformedSequenceError)?;
+                    let c = char::from_u32(cp).ok_or(MalformedSequenceError)?;
+                    text.push(c);
+                }
+                Some(text)
+            }
         }
+    };
+
+    if split.next().is_some() {
+        bail!();
     }
 
     let event = Event::Key(KeyEvent {
@@ -516,12 +532,17 @@ fn parse_csi_u_encoded_key_code(buffer: &[u8]) -> Result<Option<Event>> {
         modifiers,
         kind,
         state: state_from_keycode | state_from_modifiers,
+        enhancements: KeyEventEnhancements {
+            shifted_key,
+            base_layout_key,
+            associated_text,
+        },
     });
 
     Ok(Some(event))
 }
 
-fn parse_modifiers(mask: u8) -> Modifiers {
+fn parse_modifiers(mask: u16) -> Modifiers {
     let modifier_mask = mask.saturating_sub(1);
     let mut modifiers = Modifiers::empty();
     if modifier_mask & 1 != 0 {
@@ -545,7 +566,7 @@ fn parse_modifiers(mask: u8) -> Modifiers {
     modifiers
 }
 
-fn parse_modifiers_to_state(mask: u8) -> KeyEventState {
+fn parse_modifiers_to_state(mask: u16) -> KeyEventState {
     let modifier_mask = mask.saturating_sub(1);
     let mut state = KeyEventState::empty();
     if modifier_mask & 64 != 0 {
@@ -576,7 +597,7 @@ fn parse_csi_modifier_key_code(buffer: &[u8]) -> Result<Option<Event>> {
     let (modifiers, kind) =
         if let Ok((modifier_mask, kind_code)) = modifier_and_kind_parsed(&mut split) {
             (
-                parse_modifiers(modifier_mask),
+                parse_modifiers(modifier_mask as u16),
                 parse_key_event_kind(kind_code),
             )
         } else if buffer.len() > 3 {
@@ -584,7 +605,7 @@ fn parse_csi_modifier_key_code(buffer: &[u8]) -> Result<Option<Event>> {
                 parse_modifiers(
                     (buffer[buffer.len() - 2] as char)
                         .to_digit(10)
-                        .ok_or(MalformedSequenceError)? as u8,
+                        .ok_or(MalformedSequenceError)? as u16,
                 ),
                 KeyEventKind::Press,
             )
@@ -612,6 +633,7 @@ fn parse_csi_modifier_key_code(buffer: &[u8]) -> Result<Option<Event>> {
         modifiers,
         kind,
         state: KeyEventState::NONE,
+        enhancements: KeyEventEnhancements::new(),
     });
 
     Ok(Some(event))
@@ -630,9 +652,9 @@ fn parse_csi_special_key_code(buffer: &[u8]) -> Result<Option<Event>> {
     let (modifiers, kind, state) =
         if let Ok((modifier_mask, kind_code)) = modifier_and_kind_parsed(&mut split) {
             (
-                parse_modifiers(modifier_mask),
+                parse_modifiers(modifier_mask as u16),
                 parse_key_event_kind(kind_code),
-                parse_modifiers_to_state(modifier_mask),
+                parse_modifiers_to_state(modifier_mask as u16),
             )
         } else {
             (Modifiers::NONE, KeyEventKind::Press, KeyEventState::NONE)
@@ -658,6 +680,7 @@ fn parse_csi_special_key_code(buffer: &[u8]) -> Result<Option<Event>> {
         modifiers,
         kind,
         state,
+        enhancements: KeyEventEnhancements::new(),
     });
 
     Ok(Some(event))
@@ -1377,5 +1400,172 @@ mod test {
         assert_eq!(event, Some(Event::Paste("Hello, world!".to_string())));
         let event = parse_event(b"\x1b[200~\x1b[201~", false).unwrap();
         assert_eq!(event, Some(Event::Paste("".to_string())));
+    }
+
+    #[test]
+    fn parse_kitty_csi_u_metadata() {
+        // Shift+1: canonical '1' (49), shifted '!' (33), Shift modifier (2)
+        let event = parse_event(b"\x1b[49:33;2u", false).unwrap().unwrap();
+        assert_eq!(
+            event,
+            Event::Key(KeyEvent {
+                code: KeyCode::Char('1'),
+                modifiers: Modifiers::SHIFT,
+                kind: KeyEventKind::Press,
+                state: KeyEventState::empty(),
+                enhancements: KeyEventEnhancements {
+                    shifted_key: Some('!'),
+                    base_layout_key: None,
+                    associated_text: None,
+                }
+            })
+        );
+
+        // Shift+1 with base layout: canonical '1' (49), shifted '!' (33), base layout '2' (50), Shift modifier (2)
+        let event = parse_event(b"\x1b[49:33:50;2u", false).unwrap().unwrap();
+        assert_eq!(
+            event,
+            Event::Key(KeyEvent {
+                code: KeyCode::Char('1'),
+                modifiers: Modifiers::SHIFT,
+                kind: KeyEventKind::Press,
+                state: KeyEventState::empty(),
+                enhancements: KeyEventEnhancements {
+                    shifted_key: Some('!'),
+                    base_layout_key: Some('2'),
+                    associated_text: None,
+                }
+            })
+        );
+
+        // Omitted shifted key: canonical '1' (49), empty shifted key, base layout '2' (50), Shift modifier (2)
+        let event = parse_event(b"\x1b[49::50;2u", false).unwrap().unwrap();
+        assert_eq!(
+            event,
+            Event::Key(KeyEvent {
+                code: KeyCode::Char('1'),
+                modifiers: Modifiers::SHIFT,
+                kind: KeyEventKind::Press,
+                state: KeyEventState::empty(),
+                enhancements: KeyEventEnhancements {
+                    shifted_key: None,
+                    base_layout_key: Some('2'),
+                    associated_text: None,
+                }
+            })
+        );
+
+        // Associated text "abc" (codepoints 97, 98, 99) with Shift+1
+        let event = parse_event(b"\x1b[49;2;97:98:99u", false).unwrap().unwrap();
+        assert_eq!(
+            event,
+            Event::Key(KeyEvent {
+                code: KeyCode::Char('1'),
+                modifiers: Modifiers::SHIFT,
+                kind: KeyEventKind::Press,
+                state: KeyEventState::empty(),
+                enhancements: KeyEventEnhancements {
+                    shifted_key: None,
+                    base_layout_key: None,
+                    associated_text: Some("abc".to_string()),
+                }
+            })
+        );
+
+        // Malformed Unicode scalar values in associated text must fail
+        assert!(parse_event(b"\x1b[49;2;1114112u", false).is_err());
+        assert!(parse_event(b"\x1b[49;2;55296u", false).is_err());
+
+        // Test encoded mask 256 (all modifiers set)
+        let event = parse_event(b"\x1b[97;256u", false).unwrap().unwrap();
+        assert_eq!(
+            event,
+            Event::Key(KeyEvent {
+                code: KeyCode::Char('a'),
+                modifiers: Modifiers::SHIFT
+                    | Modifiers::ALT
+                    | Modifiers::CONTROL
+                    | Modifiers::SUPER
+                    | Modifiers::HYPER
+                    | Modifiers::META,
+                kind: KeyEventKind::Press,
+                state: KeyEventState::CAPS_LOCK | KeyEventState::NUM_LOCK,
+                enhancements: KeyEventEnhancements::new(),
+            })
+        );
+
+        // Test malformed modifier/kind
+        assert!(parse_event(b"\x1b[97;0u", false).is_err()); // modifier mask 0 is invalid
+        assert!(parse_event(b"\x1b[97;257u", false).is_err()); // modifier mask > 256 is invalid
+        assert!(parse_event(b"\x1b[97;2:4u", false).is_err()); // event kind 4 is invalid
+        assert!(parse_event(b"\x1b[97;au", false).is_err()); // malformed modifier
+        assert!(parse_event(b"\x1b[97;2:au", false).is_err()); // malformed kind
+        assert!(parse_event(b"\x1b[97;2:1:1u", false).is_err()); // excess subfields in modifier parameter
+
+        // Test excess fields
+        assert!(parse_event(b"\x1b[97:33:50:99;2u", false).is_err()); // >3 alternate-key subfields
+        assert!(parse_event(b"\x1b[97;2;97;98u", false).is_err()); // trailing semicolon fields after associated text
+        assert!(parse_event(b"\x1b[97;2;97;;u", false).is_err()); // trailing semicolon fields after associated text
+        assert!(parse_event(b"\x1b[97;2;;;u", false).is_err()); // trailing semicolon field after empty associated text
+
+        // Test empty/missing optional fields
+        let event = parse_event(b"\x1b[97u", false).unwrap().unwrap();
+        assert_eq!(
+            event,
+            Event::Key(KeyEvent {
+                code: KeyCode::Char('a'),
+                modifiers: Modifiers::NONE,
+                kind: KeyEventKind::Press,
+                state: KeyEventState::NONE,
+                enhancements: KeyEventEnhancements::new(),
+            })
+        );
+
+        let event = parse_event(b"\x1b[97;u", false).unwrap().unwrap();
+        assert_eq!(
+            event,
+            Event::Key(KeyEvent {
+                code: KeyCode::Char('a'),
+                modifiers: Modifiers::NONE,
+                kind: KeyEventKind::Press,
+                state: KeyEventState::NONE,
+                enhancements: KeyEventEnhancements::new(),
+            })
+        );
+
+        let event = parse_event(b"\x1b[97;;u", false).unwrap().unwrap();
+        assert_eq!(
+            event,
+            Event::Key(KeyEvent {
+                code: KeyCode::Char('a'),
+                modifiers: Modifiers::NONE,
+                kind: KeyEventKind::Press,
+                state: KeyEventState::NONE,
+                enhancements: KeyEventEnhancements {
+                    shifted_key: None,
+                    base_layout_key: None,
+                    associated_text: Some("".to_string()),
+                },
+            })
+        );
+
+        assert!(parse_event(b"\x1b[97;;;u", false).is_err());
+
+        // Test functional PUA alternate retained as char (e.g. 57399 is U+E037)
+        let event = parse_event(b"\x1b[97:57399;2u", false).unwrap().unwrap();
+        assert_eq!(
+            event,
+            Event::Key(KeyEvent {
+                code: KeyCode::Char('a'),
+                modifiers: Modifiers::SHIFT,
+                kind: KeyEventKind::Press,
+                state: KeyEventState::NONE,
+                enhancements: KeyEventEnhancements {
+                    shifted_key: Some('\u{E037}'),
+                    base_layout_key: None,
+                    associated_text: None,
+                }
+            })
+        );
     }
 }
