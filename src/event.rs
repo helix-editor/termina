@@ -131,6 +131,9 @@ pub struct KeyEventEnhancements {
     pub base_layout_key: Option<char>,
 
     /// The Unicode text associated with the key event.
+    ///
+    /// `None` means the protocol omitted the associated-text field. An empty string means the
+    /// field was present but reported no generated text.
     pub associated_text: Option<String>,
 }
 
