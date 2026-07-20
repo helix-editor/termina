@@ -110,36 +110,25 @@ impl Parser {
     /// escape sequence later. Set it to `false` when the buffer should be treated as complete for
     /// now; malformed or incomplete sequences can then be discarded instead of held indefinitely.
     pub fn parse(&mut self, bytes: &[u8], maybe_more: bool) {
-        self.buffer.extend_from_slice(bytes);
-        self.process_bytes(maybe_more);
+        if bytes.is_empty() {
+            self.process_bytes(maybe_more);
+            return;
+        }
+        for (idx, b) in bytes.iter().enumerate() {
+            self.buffer.push(*b);
+            self.process_bytes(maybe_more || idx + 1 < bytes.len());
+        }
     }
 
     fn process_bytes(&mut self, maybe_more: bool) {
-        let mut start = 0;
-        for n in 0..self.buffer.len() {
-            let end = n + 1;
-            match parse_event(
-                &self.buffer[start..end],
-                maybe_more || end < self.buffer.len(),
-            ) {
-                Ok(Some(event)) => {
-                    self.events.push_back(event);
-                    start = end;
-                }
-                Ok(None) => continue,
-                Err(_) => start = end,
+        match parse_event(&self.buffer, maybe_more) {
+            Ok(Some(event)) => {
+                self.events.push_back(event);
+                self.buffer.clear();
             }
+            Ok(None) => {}
+            Err(_) => self.buffer.clear(),
         }
-        self.advance(start);
-    }
-
-    fn advance(&mut self, len: usize) {
-        if len == 0 {
-            return;
-        }
-        let remain = self.buffer.len() - len;
-        self.buffer.rotate_left(len);
-        self.buffer.truncate(remain);
     }
 }
 
