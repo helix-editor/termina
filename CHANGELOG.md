@@ -7,6 +7,32 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 <!-- ## [Unreleased] -->
 
+## [v0.4.0] - 2026-08-31
+
+### Added
+
+* Expose the `PlatformWaker` type (`UnixWaker` on Unix, `WindowsWaker` on Windows) returned by `EventReader::waker` ([b635826b27](https://github.com/helix-editor/termina/commit/b635826b27))
+
+### Changed
+
+* `EventReader::read` now returns `Err` with `io::ErrorKind::Interrupted` when it is woken up by a waker, instead of continuing to block ([ae7d2cb817](https://github.com/helix-editor/termina/commit/ae7d2cb817))
+* Avoid re-parsing the read buffer from the start on each read, greatly speeding up large reads such as bracketed pastes ([#24](https://github.com/helix-editor/termina/pull/24))
+* Increase the Unix read buffer size from 64 to 1024 bytes ([22ede115e5](https://github.com/helix-editor/termina/commit/22ede115e5))
+
+### Fixed
+
+* Fix parsing of the curly underline SGR (`4:3`) ([05db4b09fe](https://github.com/helix-editor/termina/commit/05db4b09fe))
+* Fix a spurious leading SGR reset when writing `SgrAttributes` with a `parameter_chunk_size` smaller than a single parameter group ([c5a7a6a156](https://github.com/helix-editor/termina/commit/c5a7a6a156))
+* Fix underflowing subtraction on SGR and rxvt mouse coordinates at coordinate zero ([38047a2491](https://github.com/helix-editor/termina/commit/38047a2491))
+* Fix `RgbColor`'s `FromStr` implementation panicking on non-ASCII hexadecimal input ([d98151988c](https://github.com/helix-editor/termina/commit/d98151988c))
+* Return an `UnexpectedEof` error instead of busy looping when the Unix event source reaches end-of-file ([309350ba54](https://github.com/helix-editor/termina/commit/309350ba54))
+* Fix the input-ready signal being treated as a timeout on Windows ([005da445dd](https://github.com/helix-editor/termina/commit/005da445dd))
+* Drain the console input buffer during teardown on Windows ([bddc60917a](https://github.com/helix-editor/termina/commit/bddc60917a))
+* Roll back the console state when setting up the terminal fails partway on Windows ([4efcdc689e](https://github.com/helix-editor/termina/commit/4efcdc689e))
+* Fix a handle leak in `windows::legacy::screen_buffer` ([3adf9e7d04](https://github.com/helix-editor/termina/commit/3adf9e7d04))
+* Fix an undersized UTF-16 buffer used when translating legacy Windows key events ([09558746af](https://github.com/helix-editor/termina/commit/09558746af))
+* Fix underflowing subtraction on mouse and cursor row calculations on Windows ([0ec68c2f0c](https://github.com/helix-editor/termina/commit/0ec68c2f0c))
+
 ## [v0.3.3] - 2026-05-30
 
 ### Added
