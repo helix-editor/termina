@@ -126,8 +126,8 @@ pub(crate) mod legacy {
     use std::{io, ptr};
 
     use crate::event::{
-        KeyCode, KeyEvent, KeyEventKind, KeyEventState, Modifiers, MouseButton, MouseEvent,
-        MouseEventKind,
+        KeyCode, KeyEvent, KeyEventEnhancements, KeyEventKind, KeyEventState, Modifiers, MouseButton,
+        MouseEvent, MouseEventKind,
     };
     use crate::{Event, OneBased};
     use windows_sys::Win32::Foundation::{
@@ -320,6 +320,7 @@ pub(crate) mod legacy {
                         modifiers,
                         kind,
                         state: KeyEventState::empty(),
+                        enhancements: KeyEventEnhancements::new(),
                     };
                     return Some(WindowsKeyEvent::KeyEvent(key_event));
                 }
@@ -388,6 +389,7 @@ pub(crate) mod legacy {
                 modifiers,
                 kind,
                 state: KeyEventState::empty(),
+                enhancements: KeyEventEnhancements::new(),
             };
             return Some(WindowsKeyEvent::KeyEvent(key_event));
         }
