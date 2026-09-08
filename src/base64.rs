@@ -91,6 +91,41 @@ pub fn encode(input: &[u8]) -> String {
     String::from_utf8(output).expect("Invalid UTF8")
 }
 
+/// Decodes standard base64, with or without `=` padding.
+///
+/// Returns `None` for a byte outside the alphabet or a final group too short to hold a byte.
+pub fn decode(input: &[u8]) -> Option<Vec<u8>> {
+    let input = input
+        .strip_suffix(b"==")
+        .or_else(|| input.strip_suffix(b"="))
+        .unwrap_or(input);
+    let mut output = Vec::with_capacity(input.len() / 4 * 3 + 2);
+    let mut accumulator: u32 = 0;
+    let mut bits = 0u8;
+
+    for &byte in input {
+        let value = match byte {
+            b'A'..=b'Z' => byte - b'A',
+            b'a'..=b'z' => byte - b'a' + 26,
+            b'0'..=b'9' => byte - b'0' + 52,
+            b'+' => 62,
+            b'/' => 63,
+            _ => return None,
+        };
+        accumulator = (accumulator << 6) | u32::from(value);
+        bits += 6;
+        if bits >= 8 {
+            bits -= 8;
+            output.push((accumulator >> bits) as u8);
+            accumulator &= (1 << bits) - 1;
+        }
+    }
+    if bits >= 6 {
+        return None;
+    }
+    Some(output)
+}
+
 #[cfg(test)]
 mod tests {
     fn compare_encode(expected: &str, target: &[u8]) {
@@ -163,6 +198,99 @@ mod tests {
          +AgYKDhIWGh4iJiouMjY6PkJGSk5SVlpeYmZqbnJ2en6ChoqOkpaanqKmqq6ytrq+wsbKztLW2t7i5uru8vb6\
          /wMHCw8TFxsfIycrLzM3Oz9DR0tPU1dbX2Nna29zd3t/g4eLj5OXm5+jp6uvs7e7v8PHy8/T19vf4+fr7/P3+/w==",
             &bytes,
+        );
+    }
+
+    fn compare_decode(expected: &[u8], target: &str) {
+        assert_eq!(Some(expected.to_vec()), super::decode(target.as_bytes()));
+    }
+
+    #[test]
+    fn decode_rfc4648_0() {
+        compare_decode(b"", "");
+    }
+
+    #[test]
+    fn decode_rfc4648_1() {
+        compare_decode(b"f", "Zg==");
+    }
+
+    #[test]
+    fn decode_rfc4648_2() {
+        compare_decode(b"fo", "Zm8=");
+    }
+
+    #[test]
+    fn decode_rfc4648_3() {
+        compare_decode(b"foo", "Zm9v");
+    }
+
+    #[test]
+    fn decode_rfc4648_4() {
+        compare_decode(b"foob", "Zm9vYg==");
+    }
+
+    #[test]
+    fn decode_rfc4648_5() {
+        compare_decode(b"fooba", "Zm9vYmE=");
+    }
+
+    #[test]
+    fn decode_rfc4648_6() {
+        compare_decode(b"foobar", "Zm9vYmFy");
+    }
+
+    #[test]
+    fn decode_rfc4648_1_unpadded() {
+        compare_decode(b"f", "Zg");
+    }
+
+    #[test]
+    fn decode_rfc4648_2_unpadded() {
+        compare_decode(b"fo", "Zm8");
+    }
+
+    #[test]
+    fn decode_invalid_character() {
+        assert_eq!(None, super::decode(b"Zm?v"));
+    }
+
+    #[test]
+    fn decode_lone_sextet() {
+        assert_eq!(None, super::decode(b"Zm9vY"));
+    }
+
+    #[test]
+    fn decode_all_ascii() {
+        let mut ascii = Vec::<u8>::with_capacity(128);
+
+        for i in 0..128 {
+            ascii.push(i);
+        }
+
+        compare_decode(
+            &ascii,
+            "AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8gISIjJCUmJygpKissLS4vMDEyMzQ1Njc4OTo7P\
+         D0+P0BBQkNERUZHSElKS0xNTk9QUVJTVFVWV1hZWltcXV5fYGFiY2RlZmdoaWprbG1ub3BxcnN0dXZ3eHl6e3x9fn8\
+         =",
+        );
+    }
+
+    #[test]
+    fn decode_all_bytes() {
+        let mut bytes = Vec::<u8>::with_capacity(256);
+
+        for i in 0..255 {
+            bytes.push(i);
+        }
+        bytes.push(255);
+
+        compare_decode(
+            &bytes,
+            "AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8gISIjJCUmJygpKissLS4vMDEyMzQ1Njc4OTo7P\
+         D0+P0BBQkNERUZHSElKS0xNTk9QUVJTVFVWV1hZWltcXV5fYGFiY2RlZmdoaWprbG1ub3BxcnN0dXZ3eHl6e3x9fn\
+         +AgYKDhIWGh4iJiouMjY6PkJGSk5SVlpeYmZqbnJ2en6ChoqOkpaanqKmqq6ytrq+wsbKztLW2t7i5uru8vb6\
+         /wMHCw8TFxsfIycrLzM3Oz9DR0tPU1dbX2Nna29zd3t/g4eLj5OXm5+jp6uvs7e7v8PHy8/T19vf4+fr7/P3+/w==",
         );
     }
 }

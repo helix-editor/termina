@@ -33,6 +33,7 @@ use std::{collections::VecDeque, num::NonZeroU16, str};
 use crate::EventReader;
 
 use crate::{
+    base64,
     escape::{
         self,
         csi::{self, Csi, KittyKeyboardFlags, ThemeMode},
@@ -351,9 +352,36 @@ fn parse_osc(buffer: &[u8]) -> Result<Option<Event>> {
     let s = str::from_utf8(&buffer[2..buffer.len()])?;
     let mut split = s.split(';');
     let index = next_parsed::<u8>(&mut split)?;
-    let Some(color_number) = osc::DynamicColorNumber::from_index(index) else {
+    if let Some(color_number) = osc::DynamicColorNumber::from_index(index) {
+        return parse_osc_dynamic_color(color_number, &mut split);
+    }
+    match index {
+        52 => parse_osc_selection(&mut split),
+        _ => bail!(),
+    }
+}
+
+fn parse_osc_selection(split: &mut dyn Iterator<Item = &str>) -> Result<Option<Event>> {
+    let selection: osc::Selection = split
+        .next()
+        .ok_or(MalformedSequenceError)?
+        .parse()
+        .map_err(|_| MalformedSequenceError)?;
+    let Some(payload) = split.next() else { bail!() };
+    let Some(bytes) = base64::decode(payload.as_bytes()) else {
         bail!()
     };
+    let content = String::from_utf8(bytes).map_err(|_| MalformedSequenceError)?;
+    Ok(Some(Event::Osc(osc::Osc::SetSelection(
+        selection,
+        content.into(),
+    ))))
+}
+
+fn parse_osc_dynamic_color(
+    color_number: osc::DynamicColorNumber,
+    split: &mut dyn Iterator<Item = &str>,
+) -> Result<Option<Event>> {
     let Some(color_or_query) = split.next() else {
         bail!()
     };
@@ -1263,6 +1291,35 @@ mod test {
                 )])
             })
         );
+    }
+
+    #[test]
+    fn parse_osc_selection_report() {
+        assert_eq!(
+            parse_event(b"\x1b]52;c;aGVsbG8=\x1b\\", false)
+                .unwrap()
+                .unwrap(),
+            Event::Osc(osc::Osc::SetSelection(
+                osc::Selection::CLIPBOARD,
+                "hello".into()
+            ))
+        );
+        // BEL ending instead of ST, unpadded base64, several selections.
+        assert_eq!(
+            parse_event(b"\x1b]52;cp;aGk\x07", false).unwrap().unwrap(),
+            Event::Osc(osc::Osc::SetSelection(
+                osc::Selection::CLIPBOARD | osc::Selection::PRIMARY,
+                "hi".into()
+            ))
+        );
+        // A query is not a report, and neither is a clear.
+        assert!(parse_event(b"\x1b]52;c;?\x07", false).is_err());
+        assert!(parse_event(b"\x1b]52;c\x07", false).is_err());
+        // Incomplete until the terminator arrives.
+        assert_eq!(parse_event(b"\x1b]52;c;aGVsbG8=", true).unwrap(), None);
+        // An OSC number the parser does not know is rejected.
+        assert!(parse_event(b"\x1b]777;notify;hi\x07", false).is_err());
+        assert!(parse_event(b"\x1b]9;hi\x07", false).is_err());
     }
 
     #[test]

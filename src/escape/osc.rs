@@ -17,7 +17,7 @@
 //! ```
 //! use termina::escape::osc::{Osc, Selection};
 //!
-//! let command = Osc::SetSelection(Selection::CLIPBOARD, "copied text");
+//! let command = Osc::SetSelection(Selection::CLIPBOARD, "copied text".into());
 //! assert_eq!(command.to_string(), "\x1b]52;c;Y29waWVkIHRleHQ=\x1b\\");
 //! ```
 //!
@@ -29,7 +29,11 @@
 //!
 //! [termwiz's OSC support]: https://docs.rs/termwiz/latest/termwiz/escape/struct.Osc.html
 
-use std::fmt::{self, Display};
+use std::{
+    borrow::Cow,
+    fmt::{self, Display},
+    str::FromStr,
+};
 
 use crate::{base64, style::RgbColor};
 
@@ -64,13 +68,14 @@ pub enum Osc<'a> {
     /// OSC 52: query one or more terminal selections described by [`Selection`].
     ///
     /// Querying sends `?` as the content payload and lets a cooperating terminal report the
-    /// selection contents.
+    /// selection contents as a [`Self::SetSelection`].
     QuerySelection(Selection),
 
     /// OSC 52: set one or more terminal selections described by [`Selection`].
     ///
-    /// The string payload is base64-encoded when formatted, as required by OSC 52.
-    SetSelection(Selection, &'a str),
+    /// The string payload is base64-encoded when formatted, as required by OSC 52. A terminal
+    /// answers [`Self::QuerySelection`] in this same form.
+    SetSelection(Selection, Cow<'a, str>),
 
     /// OSC 10-19: change or query dynamic terminal colors.
     ///
@@ -210,6 +215,40 @@ impl Display for Selection {
     }
 }
 
+/// Error returned when parsing a selection string fails.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct InvalidFormatError;
+
+/// Parses selection targets as they appear in an OSC 52 payload, such as `c` or `cp`.
+///
+/// An empty string parses as [`Selection::NONE`]; any other character is an error.
+impl FromStr for Selection {
+    type Err = InvalidFormatError;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        let mut selection = Self::NONE;
+        for c in s.chars() {
+            selection |= match c {
+                'c' => Self::CLIPBOARD,
+                'p' => Self::PRIMARY,
+                's' => Self::SELECT,
+                '0' => Self::CUT0,
+                '1' => Self::CUT1,
+                '2' => Self::CUT2,
+                '3' => Self::CUT3,
+                '4' => Self::CUT4,
+                '5' => Self::CUT5,
+                '6' => Self::CUT6,
+                '7' => Self::CUT7,
+                '8' => Self::CUT8,
+                '9' => Self::CUT9,
+                _ => return Err(InvalidFormatError),
+            };
+        }
+        Ok(selection)
+    }
+}
+
 /// Dynamic color slots addressed by OSC 10-19.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 #[repr(u8)]
@@ -318,27 +357,49 @@ impl From<RgbColor> for ColorOrQuery {
 mod test {
     use super::*;
 
+    fn compare_encode(input: Osc, expected: &str) {
+        assert_eq!(input.to_string(), expected);
+    }
+
+    /// OSC 11 query, asks the terminal for the background color.
+    ///
+    /// See <https://terminalguide.namepad.de/seq/osc-11/> and
+    /// <https://terminalguide.namepad.de/seq/osc-4/>.
     #[test]
-    fn encoding() {
-        // OSC 11 query, asks the terminal for the background color.
-        // <https://terminalguide.namepad.de/seq/osc-11/>
-        // <https://terminalguide.namepad.de/seq/osc-4/>
-        assert_eq!(
-            "\x1b]11;?\x1b\\",
+    fn dynamic_color_encoding() {
+        compare_encode(
             Osc::ChangeDynamicColors(
                 DynamicColorNumber::TextBackgroundColor,
-                vec![ColorOrQuery::Query]
-            )
-            .to_string()
+                vec![ColorOrQuery::Query],
+            ),
+            "\x1b]11;?\x1b\\",
         );
 
-        assert_eq!(
-            "\x1b]11;rgb:2828/2828/2828\x1b\\",
+        compare_encode(
             Osc::ChangeDynamicColors(
                 DynamicColorNumber::TextBackgroundColor,
-                vec![RgbColor::new(40, 40, 40).into()]
-            )
-            .to_string()
+                vec![RgbColor::new(40, 40, 40).into()],
+            ),
+            "\x1b]11;rgb:2828/2828/2828\x1b\\",
         );
+    }
+
+    fn compare_decode(input: &str, expected: Result<Selection, InvalidFormatError>) {
+        assert_eq!(input.parse(), expected);
+    }
+
+    /// OSC 52 response, reports the terminal's selection.
+    ///
+    /// See <https://terminalguide.namepad.de/seq/osc-52/>.
+    #[test]
+    fn selection_decoding() {
+        compare_decode("c", Ok(Selection::CLIPBOARD));
+        compare_decode(
+            "cp0",
+            Ok(Selection::CLIPBOARD | Selection::PRIMARY | Selection::CUT0),
+        );
+        compare_decode("", Ok(Selection::NONE));
+        compare_decode("q", Err(InvalidFormatError));
+        compare_decode(&Selection::all().to_string(), Ok(Selection::all()));
     }
 }
