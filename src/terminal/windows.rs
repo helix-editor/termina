@@ -405,7 +405,12 @@ impl WindowsTerminal {
     /// This mode enables virtual-terminal input and sets the input/output code pages to UTF-8
     /// while the terminal is active.
     pub fn new() -> io::Result<Self> {
-        Self::with_mode_internal(InputReaderMode::Vte)
+        Self::with_mode_internal(InputReaderMode::Vte, None)
+    }
+
+    /// Constructs a [`WindowsTerminal`] reusing an existing [`EventReader`].
+    pub fn with_reader(reader: EventReader) -> io::Result<Self> {
+        Self::with_mode_internal(InputReaderMode::Vte, Some(reader))
     }
 
     /// Opens the Windows terminal using the specified [`InputReaderMode`].
@@ -418,10 +423,10 @@ impl WindowsTerminal {
         // because creating an instance with `InputReaderMode::Legacy`
         // without the appropriate parsing mechanisms enabled will
         // result in no events being parsed.
-        Self::with_mode_internal(mode)
+        Self::with_mode_internal(mode, None)
     }
 
-    fn with_mode_internal(mode: InputReaderMode) -> io::Result<Self> {
+    fn with_mode_internal(mode: InputReaderMode, reader: Option<EventReader>) -> io::Result<Self> {
         let (mut input, mut output) = open_pty(mode)?;
 
         let original_input_mode = input.get_mode()?;
@@ -461,10 +466,13 @@ impl WindowsTerminal {
                 })?;
             }
 
-            Ok(EventReader::new(WindowsEventSource::new(
-                input.try_clone()?,
-                mode,
-            )?))
+            match reader {
+                Some(reader) => Ok(reader),
+                None => Ok(EventReader::new(WindowsEventSource::new(
+                    input.try_clone()?,
+                    mode,
+                )?)),
+            }
         })() {
             Ok(reader) => reader,
             Err(err) => {
