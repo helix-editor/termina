@@ -40,7 +40,7 @@ criterion = { version = "0.8", default-features = false, features = ["cargo_benc
 
 [target.'cfg(windows)'.dependencies.windows-sys]
 # TODO: this could probably be loosened.
-version = ">=0.60"
+version = ">=0.60, <0.62"
 default-features = false
 # https://microsoft.github.io/windows-rs/features/#/0.59.0/search
 features = [
