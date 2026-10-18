@@ -299,15 +299,26 @@ fn parse_csi(buffer: &[u8]) -> Result<Option<Event>> {
         b'S' => Some(Event::Key(KeyCode::Function(4).into())),
         b'?' => match buffer[buffer.len() - 1] {
             b'u' => return parse_csi_keyboard_enhancement_flags(buffer),
-            b'c' => return parse_csi_primary_device_attributes(buffer),
+            b'c' => return parse_csi_device_attributes(buffer),
             b'n' => return parse_csi_theme_mode(buffer),
             b'y' => return parse_csi_mode(buffer),
+            b'@'..=b'~' => bail!(),
             _ => None,
         },
-        b'>' => match buffer[buffer.len() - 2..buffer.len()] {
-            [b' ', b'q'] => return parse_csi_cursor_shape_query_response(buffer),
+        b'>' => match buffer[buffer.len() - 1] {
+            b'q' if buffer.ends_with(b" q") => {
+                return parse_csi_cursor_shape_query_response(buffer);
+            }
+            b'c' => return parse_csi_device_attributes(buffer),
+            b'@'..=b'~' => bail!(),
             _ => None,
         },
+        b'=' => match buffer[buffer.len() - 1] {
+            b'c' => return parse_csi_device_attributes(buffer),
+            b'@'..=b'~' => bail!(),
+            _ => None,
+        },
+        b'c' => return parse_csi_device_attributes(buffer),
         b'0'..=b'9' => {
             // Numbered escape code.
             if buffer.len() == 3 {
@@ -323,6 +334,7 @@ fn parse_csi(buffer: &[u8]) -> Result<Option<Event>> {
                         return parse_csi_bracketed_paste(buffer);
                     }
                     match last_byte {
+                        b'c' => return parse_csi_device_attributes(buffer),
                         b'M' => return parse_csi_rxvt_mouse(buffer),
                         b'~' => return parse_csi_special_key_code(buffer),
                         b'u' => return parse_csi_u_encoded_key_code(buffer),
@@ -999,12 +1011,12 @@ fn parse_csi_keyboard_enhancement_flags(buffer: &[u8]) -> Result<Option<Event>> 
     )))))
 }
 
-fn parse_csi_primary_device_attributes(buffer: &[u8]) -> Result<Option<Event>> {
-    // CSI 64 ; attr1 ; attr2 ; ... ; attrn ; c
-    assert!(buffer.starts_with(b"\x1B[?"));
+fn parse_csi_device_attributes(buffer: &[u8]) -> Result<Option<Event>> {
+    // Device attributes response (DA1, DA2, DA3): CSI ... c
+    assert!(buffer.starts_with(b"\x1B["));
     assert!(buffer.ends_with(b"c"));
 
-    // This is a stub for parsing the primary device attributes. This response is not
+    // This is a stub for parsing device attributes. This response is not
     // exposed in the crossterm API so we don't need to parse the individual attributes yet.
     // See <https://vt100.net/docs/vt510-rm/DA1.html>
 
@@ -1366,5 +1378,23 @@ mod test {
         assert_eq!(event, Some(Event::Paste("Hello, world!".to_string())));
         let event = parse_event(b"\x1b[200~\x1b[201~", false).unwrap();
         assert_eq!(event, Some(Event::Paste("".to_string())));
+    }
+
+    #[test]
+    fn parse_device_attributes_and_unhandled_csi() {
+        let mut parser = Parser::default();
+        // Simulate Ghostty DA2 response followed by an unhandled CSI sequence and keypress 'a'
+        parser.parse(b"\x1b[>1;10;0c\x1b[>1;10;0za", true);
+        assert_eq!(
+            parser.pop(),
+            Some(Event::Csi(Csi::Device(csi::Device::DeviceAttributes(()))))
+        );
+        assert_eq!(
+            parser.pop(),
+            Some(Event::Key(KeyEvent::new(
+                KeyCode::Char('a'),
+                Modifiers::NONE,
+            )))
+        );
     }
 }
