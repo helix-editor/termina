@@ -1286,6 +1286,16 @@ mod test {
                 vec![style::RgbColor::new(40, 40, 40).into()]
             ))
         );
+        // rxvt-unicode reports a translucent color with an alpha channel, which is dropped.
+        assert_eq!(
+            parse_event(b"\x1b]11;rgba:ffff/ffff/ffff/cccc\x07", false)
+                .unwrap()
+                .unwrap(),
+            Event::Osc(osc::Osc::ChangeDynamicColors(
+                osc::DynamicColorNumber::TextBackgroundColor,
+                vec![style::RgbColor::new(255, 255, 255).into()]
+            ))
+        );
     }
 
     #[test]
