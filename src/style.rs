@@ -212,7 +212,10 @@ impl FromStr for RgbColor {
     // 1. rgb:<red>/<green>/<blue>
     //    <red>, <green>, <blue> := h | hh | hhh | hhhh
     //    h := single hexadecimal digits (case insignificant)
-    // 2. #RGB, #RRGGBB, #RRRGGGBBB, #RRRRGGGGBBBB
+    // 2. rgba:<red>/<green>/<blue>/<alpha>
+    //    rxvt-unicode's extension, which it uses to report a translucent color. The alpha channel
+    //    must be valid but is dropped.
+    // 3. #RGB, #RRGGBB, #RRRGGGBBB, #RRRRGGGGBBBB
     fn from_str(s: &str) -> Result<Self, Self::Err> {
         if let Some(rgb) = s.strip_prefix("rgb:") {
             let mut parts = rgb.split('/').map(Self::channel_from_hex);
@@ -226,6 +229,19 @@ impl FromStr for RgbColor {
                 return Err(InvalidFormatError);
             };
             Ok(Self::new(r, g, b))
+        } else if let Some(rgba) = s.strip_prefix("rgba:") {
+            let mut parts = rgba.split('/').map(Self::channel_from_hex);
+            let (Some(r), Some(g), Some(b), Some(alpha), None) = (
+                parts.next(),
+                parts.next(),
+                parts.next(),
+                parts.next(),
+                parts.next(),
+            ) else {
+                return Err(InvalidFormatError);
+            };
+            alpha?;
+            Ok(Self::new(r?, g?, b?))
         } else if let Some(hex) = s.strip_prefix('#') {
             if !hex.is_ascii() {
                 return Err(InvalidFormatError);
@@ -747,6 +763,25 @@ mod test {
         assert_eq!("#282828".parse(), Ok(RgbColor::new(40, 40, 40)));
         assert_eq!("rgb:28/28/28".parse(), Ok(RgbColor::new(40, 40, 40)));
         assert_eq!("rgb:2828/2828/2828".parse(), Ok(RgbColor::new(40, 40, 40)));
+        assert_eq!(
+            "rgba:2828/2828/2828/cccc".parse(),
+            Ok(RgbColor::new(40, 40, 40))
+        );
+    }
+
+    #[test]
+    fn parse_rgba_color_needs_four_valid_channels() {
+        assert_eq!("rgba:f/f/f".parse::<RgbColor>(), Err(InvalidFormatError));
+        assert_eq!(
+            "rgba:f/f/f/f/f".parse::<RgbColor>(),
+            Err(InvalidFormatError)
+        );
+        assert_eq!("rgba:f/f/f/".parse::<RgbColor>(), Err(InvalidFormatError));
+        assert_eq!("rgba:f/f/f/g".parse::<RgbColor>(), Err(InvalidFormatError));
+        assert_eq!(
+            "rgba:f/f/f/fffff".parse::<RgbColor>(),
+            Err(InvalidFormatError)
+        );
     }
 
     #[test]
