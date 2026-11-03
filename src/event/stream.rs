@@ -88,8 +88,10 @@ impl EventStream {
         thread::spawn(move || {
             while let Ok(task) = receiver.recv() {
                 loop {
-                    if let Ok(true) = task_reader.poll(None, &*task_filter) {
-                        break;
+                    match task_reader.poll(None, &*task_filter) {
+                        // An event or an error: wake the stream so `poll_next` can return it.
+                        Ok(true) | Err(_) => break,
+                        Ok(false) => {}
                     }
                     if task.stream_wake_task_should_shutdown.load(Ordering::SeqCst) {
                         break;
@@ -151,6 +153,58 @@ impl Stream for EventStream {
                 Poll::Pending
             }
             Err(err) => Poll::Ready(Some(Err(err))),
+        }
+    }
+}
+
+#[cfg(all(test, unix))]
+mod tests {
+    use std::{
+        io,
+        os::unix::net::UnixStream,
+        pin::Pin,
+        sync::{mpsc, Arc, Mutex},
+        task::{Context, Poll, Wake, Waker},
+        time::Duration,
+    };
+
+    use futures_core::Stream as _;
+
+    use super::EventStream;
+    use crate::{event::source::UnixEventSource, terminal::FileDescriptor, EventReader};
+
+    struct Notify(Mutex<mpsc::Sender<()>>);
+
+    impl Wake for Notify {
+        fn wake(self: Arc<Self>) {
+            let _ = self.0.lock().unwrap().send(());
+        }
+    }
+
+    #[test]
+    fn closed_input_ends_in_an_error() {
+        // Closing the peer gives the input EOF, as when a terminal goes away.
+        let (input, peer) = UnixStream::pair().unwrap();
+        let write = input.try_clone().unwrap();
+        let source = UnixEventSource::new(
+            FileDescriptor::Owned(input.into()),
+            FileDescriptor::Owned(write.into()),
+        )
+        .unwrap();
+        let mut stream = EventStream::new(EventReader::new(source), |_| true);
+        let (sender, woken) = mpsc::channel();
+        let waker = Waker::from(Arc::new(Notify(Mutex::new(sender))));
+        let mut cx = Context::from_waker(&waker);
+
+        assert!(Pin::new(&mut stream).poll_next(&mut cx).is_pending());
+        drop(peer);
+
+        woken
+            .recv_timeout(Duration::from_secs(5))
+            .expect("the stream wasn't woken when its input closed");
+        match Pin::new(&mut stream).poll_next(&mut cx) {
+            Poll::Ready(Some(Err(err))) => assert_eq!(err.kind(), io::ErrorKind::UnexpectedEof),
+            other => panic!("expected an end-of-file error, got {other:?}"),
         }
     }
 }
